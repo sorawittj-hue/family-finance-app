@@ -4,7 +4,7 @@ import { useFinance } from '../context/FinanceContext';
 import { Button } from './ui/Button';
 
 export const TransferModal = ({ onClose }) => {
-  const { transferWallet, wallets, currency } = useFinance();
+  const { transferWallet, wallets } = useFinance();
   const [formData, setFormData] = useState({
     fromWalletId: '',
     toWalletId: '',

@@ -1,23 +1,53 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { formatMoney, formatMoneyShort, CATEGORIES, MONTH_TH, CURRENCY_MAP, getCategory } from '../utils/constants';
-import { ArrowUpRight, ArrowDownRight, Award, Flame, AlertTriangle, Lightbulb, CheckCircle2, Calendar, Clock, CreditCard, ArrowRightLeft } from 'lucide-react';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import { formatMoney, formatMoneyShort, getCategory } from '../utils/constants';
+import { ArrowUpRight, ArrowDownRight, ArrowRightLeft } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from 'recharts';
 import { format, subDays, isSameMonth, parseISO } from 'date-fns';
 import { TransferModal } from '../components/TransferModal';
 
+const CHART_HEIGHT = 256;
+
+const useChartSize = () => {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return undefined;
+
+    const updateWidth = () => {
+      const nextWidth = Math.floor(node.getBoundingClientRect().width);
+      setWidth(nextWidth > 0 ? nextWidth : 0);
+    };
+
+    updateWidth();
+
+    if (typeof window.ResizeObserver === 'function') {
+      const observer = new window.ResizeObserver(updateWidth);
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener('resize', updateWidth);
+    return () => window.removeEventListener('resize', updateWidth);
+  }, []);
+
+  return { ref, width, height: CHART_HEIGHT, isReady: width > 0 };
+};
+
 export const Dashboard = () => {
-  const { transactions, wallets, budgets, currency, recurringTxs, triggerRecurringTx } = useFinance();
+  const { transactions, wallets, currency } = useFinance();
   const [isTransferOpen, setIsTransferOpen] = useState(false);
-  const currentMonth = new Date();
-  
-  const currencySymbol = useMemo(() => CURRENCY_MAP[currency]?.symbol || '฿', [currency]);
+  const currentMonth = useMemo(() => new Date(), []);
+  const trendChart = useChartSize();
+  const categoryChart = useChartSize();
 
   const currentMonthTxs = useMemo(() => {
     return transactions.filter(tx => isSameMonth(parseISO(tx.date), currentMonth));
-  }, [transactions]);
+  }, [transactions, currentMonth]);
 
   const { totalIncome, totalExpense, totalBalance } = useMemo(() => {
     const income = currentMonthTxs.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
@@ -121,53 +151,53 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 p-6">
           <h3 className="text-sm font-bold text-[color:var(--text-primary)] mb-6 uppercase tracking-wider">แนวโน้มรายรับ-รายจ่าย (15 วัน)</h3>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={dailyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorInc" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                  </linearGradient>
-                  <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
-                <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => formatMoneyShort(v, currency)} />
-                <Tooltip 
-                  contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '12px', color: 'var(--text-primary)' }}
-                />
-                <Area type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorInc)" />
-                <Area type="monotone" dataKey="expense" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div ref={trendChart.ref} className="h-64 w-full">
+            {trendChart.isReady && (
+                <AreaChart width={trendChart.width} height={trendChart.height} data={dailyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorInc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => formatMoneyShort(v, currency)} />
+                  <Tooltip 
+                    contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '12px', color: 'var(--text-primary)' }}
+                  />
+                  <Area type="monotone" dataKey="income" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorInc)" />
+                  <Area type="monotone" dataKey="expense" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorExp)" />
+                </AreaChart>
+            )}
           </div>
         </Card>
 
         <Card className="p-6">
           <h3 className="text-sm font-bold text-[color:var(--text-primary)] mb-6 uppercase tracking-wider">รายจ่ายตามหมวดหมู่</h3>
-          <div className="h-64 w-full">
+          <div ref={categoryChart.ref} className="h-64 w-full">
             {expenseByCategory.length > 0 ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={expenseByCategory} layout="vertical" margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
-                  <XAxis type="number" hide />
-                  <YAxis dataKey="name" type="category" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} width={80} />
-                  <Tooltip 
-                    cursor={{ fill: 'rgba(255,255,255,0.05)' }}
-                    contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '12px', color: 'var(--text-primary)' }}
-                    formatter={(value) => formatMoney(value, currency)}
-                  />
-                  <Bar dataKey="amount" radius={[0, 4, 4, 0]} barSize={20}>
-                    {expenseByCategory.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              categoryChart.isReady && (
+                  <BarChart width={categoryChart.width} height={categoryChart.height} data={expenseByCategory} layout="vertical" margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} width={80} />
+                    <Tooltip 
+                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                      contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '12px', color: 'var(--text-primary)' }}
+                      formatter={(value) => formatMoney(value, currency)}
+                    />
+                    <Bar dataKey="amount" radius={[0, 4, 4, 0]} barSize={20}>
+                      {expenseByCategory.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+              )
             ) : (
               <div className="h-full flex items-center justify-center text-[color:var(--text-muted)] text-sm">
                 ไม่มีข้อมูลรายจ่ายในเดือนนี้

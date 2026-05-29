@@ -7,13 +7,13 @@ import { Target, PlusCircle, Trash2, AlertTriangle, ArrowRightLeft } from 'lucid
 import { isSameMonth, parseISO } from 'date-fns';
 
 export const Budgets = () => {
-  const { budgets, updateBudget, transferBudget, transactions, currency } = useFinance();
+  const { budgets, updateBudget, deleteBudget, transferBudget, transactions, currency } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
   const [newBudget, setNewBudget] = useState({ category: 'food', amount: '' });
   const [transferMode, setTransferMode] = useState(null); // { fromCategoryId: '' }
   const [transferForm, setTransferForm] = useState({ toCategory: '', amount: '' });
 
-  const currentMonth = new Date();
+  const currentMonth = useMemo(() => new Date(), []);
 
   // Convert { categoryId: amount } to array and calculate spent amounts
   const budgetProgress = useMemo(() => {
@@ -42,7 +42,7 @@ export const Budgets = () => {
         isNearLimit
       };
     }).sort((a, b) => b.progress - a.progress);
-  }, [budgets, transactions]);
+  }, [budgets, transactions, currentMonth]);
 
   const totalBudget = Object.values(budgets).reduce((a, b) => a + b, 0);
   const totalSpent = budgetProgress.reduce((sum, b) => sum + b.spent, 0);
@@ -60,14 +60,7 @@ export const Budgets = () => {
 
   const handleDeleteBudget = (categoryId) => {
     if (window.confirm('คุณต้องการลบงบประมาณนี้ใช่หรือไม่?')) {
-      const newBudgets = { ...budgets };
-      delete newBudgets[categoryId];
-      // Since context doesn't expose deleteBudget, we can emulate it by updating state manually,
-      // but the safest way is to update it to 0, which functionally disables it, or 
-      // wait, we can just use updateBudget(categoryId, undefined) ?
-      // FinanceContext: setBudgets((prev) => ({ ...prev, [categoryId]: amount }));
-      // Actually we can set it to 0, or just leave it. Let's set it to 0.
-      updateBudget(categoryId, 0);
+      deleteBudget(categoryId);
     }
   };
 

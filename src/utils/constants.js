@@ -1,8 +1,6 @@
 import {
   ArrowDownRight,
   ArrowUpRight,
-  Wallet,
-  TrendingDown,
   TrendingUp,
   PiggyBank,
   PlusCircle,

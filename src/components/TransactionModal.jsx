@@ -5,7 +5,7 @@ import { CATEGORIES } from '../utils/constants';
 import { Button } from './ui/Button';
 
 export const TransactionModal = ({ onClose, transactionToEdit = null }) => {
-  const { addTransaction, updateTransaction, wallets, currency } = useFinance();
+  const { addTransaction, updateTransaction, wallets } = useFinance();
   const [formData, setFormData] = useState({
     type: 'expense',
     amount: '',

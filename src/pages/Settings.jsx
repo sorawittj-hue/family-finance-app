@@ -6,7 +6,7 @@ import { getCategory, CURRENCY_MAP, CATEGORIES, formatMoney } from '../utils/con
 import { 
   Download, Upload, ShieldAlert, CheckCircle2, Moon, Sun, 
   Smartphone, Eye, Sparkles, Printer, FileSpreadsheet, 
-  Trash2, Plus, Edit2, Info, Database, AlertTriangle, X,
+  Trash2, Plus, Edit2, Database, AlertTriangle, X,
   Clock, Landmark, CreditCard
 } from 'lucide-react';
 

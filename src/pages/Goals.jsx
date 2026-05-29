@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { formatMoney, CURRENCY_MAP } from '../utils/constants';
+import { formatMoney } from '../utils/constants';
 import { Target, PlusCircle, Trash2, Trophy } from 'lucide-react';
 
 export const Goals = () => {
