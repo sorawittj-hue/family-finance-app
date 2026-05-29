@@ -45,7 +45,7 @@ export const Settings = () => {
   const [walletForm, setWalletForm] = useState({ name: '', color: '#3b82f6', type: 'bank' });
 
   const [isAddingBill, setIsAddingBill] = useState(false);
-  const [billForm, setBillForm] = useState({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly' });
+  const [billForm, setBillForm] = useState({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly', dueDay: '1' });
 
   const THEMES = [
     { id: 'dark', name: 'มืด (Dark)', icon: Moon, desc: 'สบายตา ถนอมสายตา' },
@@ -157,10 +157,11 @@ export const Settings = () => {
       category: billForm.category,
       amount: amt,
       walletId: billForm.walletId,
-      interval: billForm.interval
+      interval: billForm.interval,
+      dueDay: Number(billForm.dueDay) || 1
     });
 
-    setBillForm({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly' });
+    setBillForm({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly', dueDay: '1' });
     setIsAddingBill(false);
   };
 
@@ -411,6 +412,18 @@ export const Settings = () => {
                     />
                   </div>
                 </div>
+                <div>
+                  <label className="block text-[10px] text-[color:var(--text-muted)] mb-1.5">วันครบกำหนดทุกเดือน</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={billForm.dueDay}
+                    onChange={e => setBillForm({ ...billForm, dueDay: e.target.value })}
+                    className="w-full bg-[color:var(--bg-card)] border border-[color:var(--border-color)] rounded-lg px-3 py-2 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-cyan-500"
+                    required
+                  />
+                </div>
                 <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-[color:var(--border-color)]">
                   <Button type="button" variant="ghost" size="sm" onClick={() => setIsAddingBill(false)}>ยกเลิก</Button>
                   <Button type="submit" size="sm" className="bg-cyan-600 hover:bg-cyan-500 border-none">บันทึกบิลประจำ</Button>
@@ -443,7 +456,7 @@ export const Settings = () => {
                       <div>
                         <h4 className="font-bold text-[color:var(--text-primary)] text-sm">{bill.name}</h4>
                         <p className="text-[10px] text-[color:var(--text-muted)] mt-0.5 font-medium">
-                          {bill.type === 'income' ? 'รายรับประจำ' : 'รายจ่ายประจำ'} • บัญชี: <span className="font-semibold" style={{ color: targetWallet?.color || 'var(--text-secondary)' }}>{targetWallet?.name || 'เงินสด'}</span>
+                          {bill.type === 'income' ? 'รายรับประจำ' : 'รายจ่ายประจำ'} • ทุกวันที่ {bill.dueDay || 1} • บัญชี: <span className="font-semibold" style={{ color: targetWallet?.color || 'var(--text-secondary)' }}>{targetWallet?.name || 'เงินสด'}</span>
                         </p>
                       </div>
                     </div>

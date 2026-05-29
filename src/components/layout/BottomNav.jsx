@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, List, Target, PieChart, Settings } from 'lucide-react';
+import { LayoutDashboard, LineChart, List, Target, PieChart, Settings } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const NAV_ITEMS = [
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { path: '/transactions', label: 'รายการ', icon: List },
   { path: '/budgets', label: 'งบประมาณ', icon: PieChart },
   { path: '/goals', label: 'เป้าหมาย', icon: Target },
+  { path: '/reports', label: 'รายงาน', icon: LineChart },
   { path: '/settings', label: 'ตั้งค่า', icon: Settings },
 ];
 
@@ -23,7 +24,7 @@ export const BottomNav = () => {
               to={item.path}
               className={({ isActive }) =>
                 cn(
-                  "flex flex-col items-center justify-center w-16 h-full space-y-1 transition-all duration-200",
+                  "flex flex-col items-center justify-center min-w-0 flex-1 h-full space-y-1 transition-all duration-200",
                   isActive 
                     ? "text-blue-400" 
                     : "text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]"

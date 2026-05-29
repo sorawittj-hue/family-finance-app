@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, List, Target, PieChart, Settings } from 'lucide-react';
+import { LayoutDashboard, LineChart, List, Target, PieChart, Settings } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
 const NAV_ITEMS = [
@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { path: '/transactions', label: 'รายการเคลื่อนไหว', icon: List },
   { path: '/budgets', label: 'งบประมาณรายเดือน', icon: PieChart },
   { path: '/goals', label: 'เป้าหมายการออม', icon: Target },
+  { path: '/reports', label: 'รายงานสุขภาพการเงิน', icon: LineChart },
   { path: '/settings', label: 'ตั้งค่าระบบ', icon: Settings },
 ];
 

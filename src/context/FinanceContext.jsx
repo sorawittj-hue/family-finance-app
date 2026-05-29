@@ -308,7 +308,8 @@ export const FinanceProvider = ({ children }) => {
 
   // Recurring Bill Actions
   const addRecurringTx = (bill) => {
-    setRecurringTxs(prev => [...prev, { ...bill, id: `rec-${generateUUID()}`, lastTriggered: '' }]);
+    const dueDay = Math.min(31, Math.max(1, Number(bill.dueDay) || 1));
+    setRecurringTxs(prev => [...prev, { ...bill, dueDay, id: `rec-${generateUUID()}`, lastTriggered: '' }]);
   };
 
   const deleteRecurringTx = (id) => {
@@ -346,9 +347,9 @@ export const FinanceProvider = ({ children }) => {
     
     // Add default recurring bills for demo
     setRecurringTxs([
-      { id: 'rec-demo-netflix', name: 'บิลรายเดือน Netflix Premium', type: 'expense', category: 'shopping', amount: 419, walletId: 'wallet-ktc', interval: 'monthly', lastTriggered: '' },
-      { id: 'rec-demo-electric', name: 'ค่าไฟฟ้าน้ำประปาบ้าน', type: 'expense', category: 'home', amount: 2850, walletId: 'wallet-scb', interval: 'monthly', lastTriggered: '' },
-      { id: 'rec-demo-salary', name: 'เงินปันผลรายเดือนจากพอร์ตหุ้น', type: 'income', category: 'dividend', amount: 3500, walletId: 'wallet-kbank', interval: 'monthly', lastTriggered: '' }
+      { id: 'rec-demo-netflix', name: 'บิลรายเดือน Netflix Premium', type: 'expense', category: 'shopping', amount: 419, walletId: 'wallet-ktc', interval: 'monthly', dueDay: 7, lastTriggered: '' },
+      { id: 'rec-demo-electric', name: 'ค่าไฟฟ้าน้ำประปาบ้าน', type: 'expense', category: 'home', amount: 2850, walletId: 'wallet-scb', interval: 'monthly', dueDay: 18, lastTriggered: '' },
+      { id: 'rec-demo-salary', name: 'เงินปันผลรายเดือนจากพอร์ตหุ้น', type: 'income', category: 'dividend', amount: 3500, walletId: 'wallet-kbank', interval: 'monthly', dueDay: 28, lastTriggered: '' }
     ]);
   };
 

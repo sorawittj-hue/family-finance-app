@@ -3,15 +3,19 @@ import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { formatMoney, getCategory } from '../utils/constants';
-import { PlusCircle, Search, Trash2 } from 'lucide-react';
+import { Edit2, Filter, PlusCircle, Search, Trash2 } from 'lucide-react';
 import { TransactionModal } from '../components/TransactionModal';
 import { format, parseISO } from 'date-fns';
 import { th } from 'date-fns/locale';
+import { getMonthKey } from '../utils/financeAnalytics';
 
 export const Transactions = () => {
   const { transactions, wallets, deleteTransaction, currency } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [filterType, setFilterType] = useState('all');
+  const [filterWallet, setFilterWallet] = useState('all');
+  const [filterMonth, setFilterMonth] = useState(() => getMonthKey());
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredTxs = useMemo(() => {
@@ -19,6 +23,14 @@ export const Transactions = () => {
     
     if (filterType !== 'all') {
       result = result.filter(t => t.type === filterType);
+    }
+
+    if (filterWallet !== 'all') {
+      result = result.filter(t => t.walletId === filterWallet);
+    }
+
+    if (filterMonth) {
+      result = result.filter(t => t.date?.startsWith(filterMonth));
     }
     
     if (searchTerm) {
@@ -31,7 +43,24 @@ export const Transactions = () => {
     }
     
     return result;
-  }, [transactions, filterType, searchTerm]);
+  }, [transactions, filterType, filterWallet, filterMonth, searchTerm]);
+
+  const filteredTotals = useMemo(() => {
+    return filteredTxs.reduce((acc, tx) => {
+      const amount = Number(tx.amount) || 0;
+      if (tx.type === 'income') acc.income += amount;
+      if (tx.type === 'expense') acc.expense += amount;
+      if (tx.type === 'saving') acc.saving += amount;
+      return acc;
+    }, { income: 0, expense: 0, saving: 0 });
+  }, [filteredTxs]);
+
+  const handleDelete = (transaction) => {
+    const label = getCategory(transaction.type, transaction.category).label;
+    if (window.confirm(`ลบรายการ "${label}" จำนวน ${formatMoney(transaction.amount, currency)} ใช่หรือไม่?`)) {
+      deleteTransaction(transaction.id);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -46,7 +75,22 @@ export const Transactions = () => {
       </header>
 
       <Card className="p-4 md:p-6">
-        <div className="flex flex-col md:flex-row gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+            <p className="text-xs text-[color:var(--text-secondary)]">รายรับจากผลค้นหา</p>
+            <p className="text-xl font-black text-emerald-400 mt-1">+{formatMoney(filteredTotals.income, currency)}</p>
+          </div>
+          <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+            <p className="text-xs text-[color:var(--text-secondary)]">รายจ่ายจากผลค้นหา</p>
+            <p className="text-xl font-black text-rose-400 mt-1">-{formatMoney(filteredTotals.expense, currency)}</p>
+          </div>
+          <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+            <p className="text-xs text-[color:var(--text-secondary)]">เงินออมจากผลค้นหา</p>
+            <p className="text-xl font-black text-blue-400 mt-1">{formatMoney(filteredTotals.saving, currency)}</p>
+          </div>
+        </div>
+
+        <div className="flex flex-col xl:flex-row gap-4 mb-6">
           <div className="relative flex-1">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search size={18} className="text-[color:var(--text-muted)]" />
@@ -59,8 +103,31 @@ export const Transactions = () => {
               className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
             />
           </div>
-          <div className="flex gap-2">
-            {['all', 'income', 'expense'].map(type => (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <label className="flex items-center gap-2 bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2 text-sm text-[color:var(--text-secondary)]">
+              <Filter size={16} />
+              <input
+                type="month"
+                value={filterMonth}
+                onChange={e => setFilterMonth(e.target.value)}
+                className="bg-transparent text-[color:var(--text-primary)] outline-none"
+              />
+            </label>
+            <select
+              value={filterWallet}
+              onChange={e => setFilterWallet(e.target.value)}
+              className="bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500"
+            >
+              <option value="all">ทุกกระเป๋า</option>
+              {wallets.map(wallet => (
+                <option key={wallet.id} value={wallet.id}>{wallet.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-6">
+            {['all', 'income', 'expense', 'saving'].map(type => (
               <button
                 key={type}
                 onClick={() => setFilterType(type)}
@@ -70,10 +137,9 @@ export const Transactions = () => {
                     : 'bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)] border border-[color:var(--border-color)] hover:text-[color:var(--text-primary)]'
                 }`}
               >
-                {type === 'all' ? 'ทั้งหมด' : type === 'income' ? 'รายรับ' : 'รายจ่าย'}
+                {type === 'all' ? 'ทั้งหมด' : type === 'income' ? 'รายรับ' : type === 'expense' ? 'รายจ่าย' : 'เงินออม'}
               </button>
             ))}
-          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -123,18 +189,29 @@ export const Transactions = () => {
                         </span>
                       </td>
                       <td className="py-4 px-4 text-right">
-                        <div className={`text-sm font-black tracking-tight ${tx.type === 'income' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <div className={`text-sm font-black tracking-tight ${tx.type === 'income' ? 'text-emerald-400' : tx.type === 'saving' ? 'text-blue-400' : 'text-rose-400'}`}>
                           {tx.type === 'income' ? '+' : '-'}{formatMoney(tx.amount, currency)}
                         </div>
                       </td>
                       <td className="py-4 px-4 text-center">
-                        <button 
-                          onClick={() => deleteTransaction(tx.id)}
-                          className="p-2 rounded-xl text-[color:var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors opacity-0 group-hover:opacity-100"
-                          title="ลบรายการ"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!tx.isTransfer && (
+                            <button
+                              onClick={() => setEditingTransaction(tx)}
+                              className="p-2 rounded-xl text-[color:var(--text-muted)] hover:text-blue-400 hover:bg-blue-500/10 transition-colors"
+                              title="แก้ไขรายการ"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => handleDelete(tx)}
+                            className="p-2 rounded-xl text-[color:var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+                            title="ลบรายการ"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -152,6 +229,12 @@ export const Transactions = () => {
       </Card>
 
       {isAdding && <TransactionModal onClose={() => setIsAdding(false)} />}
+      {editingTransaction && (
+        <TransactionModal
+          transactionToEdit={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+        />
+      )}
     </div>
   );
 };
