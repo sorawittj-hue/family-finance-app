@@ -301,17 +301,11 @@ export const FinanceProvider = ({ children }) => {
         persistData(STORAGE_KEYS.WALLETS, clientWallets, userId);
       }
 
-      setTransactions(clientTxs);
-      persistData(STORAGE_KEYS.TRANSACTIONS, clientTxs, userId);
-
-      setBudgets(clientBudgets);
-      persistData(STORAGE_KEYS.BUDGETS, clientBudgets, userId);
-
-      setGoals(clientGoals);
-      persistData(STORAGE_KEYS.GOALS, clientGoals, userId);
-
-      setRecurringTxs(clientRecurring);
-      persistData(STORAGE_KEYS.RECURRING, clientRecurring, userId);
+      // Don't overwrite non-empty local data with empty cloud data
+      if (clientTxs.length > 0) setTransactions(clientTxs);
+      if (clientBudgets && Object.keys(clientBudgets).length > 0) setBudgets(clientBudgets);
+      if (clientGoals.length > 0) setGoals(clientGoals);
+      if (clientRecurring.length > 0) setRecurringTxs(clientRecurring);
       setLastSyncedAt(new Date().toISOString());
       setSyncError('');
     } catch (err) {
@@ -323,11 +317,11 @@ export const FinanceProvider = ({ children }) => {
   const loadUserStates = useCallback(async (currentUser) => {
     setSyncing(true);
     // Load cached data immediately so UI is not empty
-    const cachedWallets = loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, currentUser.id);
-    const cachedTxs = loadData(STORAGE_KEYS.TRANSACTIONS, [], currentUser.id);
-    const cachedBudgets = loadData(STORAGE_KEYS.BUDGETS, {}, currentUser.id);
-    const cachedGoals = loadData(STORAGE_KEYS.GOALS, [], currentUser.id);
-    const cachedRecurring = loadData(STORAGE_KEYS.RECURRING, [], currentUser.id);
+    const cachedWallets = loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null);
+    const cachedTxs = loadData(STORAGE_KEYS.TRANSACTIONS, [], null);
+    const cachedBudgets = loadData(STORAGE_KEYS.BUDGETS, {}, null);
+    const cachedGoals = loadData(STORAGE_KEYS.GOALS, [], null);
+    const cachedRecurring = loadData(STORAGE_KEYS.RECURRING, [], null);
 
     setWallets(cachedWallets);
     setTransactions(cachedTxs);
@@ -441,31 +435,31 @@ export const FinanceProvider = ({ children }) => {
   // Sync to localStorage
   useEffect(() => {
     if (!syncing) {
-      persistData(STORAGE_KEYS.TRANSACTIONS, transactions, user?.id);
+      persistData(STORAGE_KEYS.TRANSACTIONS, transactions, null);
     }
   }, [transactions, user, syncing]);
 
   useEffect(() => {
     if (!syncing) {
-      persistData(STORAGE_KEYS.BUDGETS, budgets, user?.id);
+      persistData(STORAGE_KEYS.BUDGETS, budgets, null);
     }
   }, [budgets, user, syncing]);
 
   useEffect(() => {
     if (!syncing) {
-      persistData(STORAGE_KEYS.GOALS, goals, user?.id);
+      persistData(STORAGE_KEYS.GOALS, goals, null);
     }
   }, [goals, user, syncing]);
 
   useEffect(() => {
     if (!syncing) {
-      persistData(STORAGE_KEYS.WALLETS, wallets, user?.id);
+      persistData(STORAGE_KEYS.WALLETS, wallets, null);
     }
   }, [wallets, user, syncing]);
 
   useEffect(() => {
     if (!syncing) {
-      persistData(STORAGE_KEYS.RECURRING, recurringTxs, user?.id);
+      persistData(STORAGE_KEYS.RECURRING, recurringTxs, null);
     }
   }, [recurringTxs, user, syncing]);
 
@@ -854,7 +848,7 @@ export const FinanceProvider = ({ children }) => {
           .insert(mapTxToDb(newTx, user.id));
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Add transaction failed', err);
+        console.warn('[Sync] Add transaction to cloud failed:', err.message);
       }
     }
 
@@ -882,7 +876,7 @@ export const FinanceProvider = ({ children }) => {
           .in('id', idsToDelete);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Delete transaction failed', err);
+        console.warn('[Sync] Delete transaction from cloud failed:', err.message);
       }
     }
 
@@ -919,7 +913,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Update transaction failed', err);
+        console.warn('[Sync] Update transaction in cloud failed:', err.message);
       }
     }
 
@@ -978,7 +972,7 @@ export const FinanceProvider = ({ children }) => {
           ]);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Transfer failed', err);
+        console.warn('[Sync] Transfer in cloud failed:', err.message);
       }
     }
 
@@ -1010,7 +1004,7 @@ export const FinanceProvider = ({ children }) => {
           }, { onConflict: 'user_id,category_id' });
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Update budget failed', err);
+        console.warn('[Sync] Update budget in cloud failed:', err.message);
       }
     }
 
@@ -1033,7 +1027,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('category_id', categoryId);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Delete budget failed', err);
+        console.warn('[Sync] Delete budget from cloud failed:', err.message);
       }
     }
 
@@ -1067,7 +1061,7 @@ export const FinanceProvider = ({ children }) => {
           ], { onConflict: 'user_id,category_id' });
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Transfer budget failed', err);
+        console.warn('[Sync] Transfer budget in cloud failed:', err.message);
       }
     }
 
@@ -1096,7 +1090,7 @@ export const FinanceProvider = ({ children }) => {
           .insert(mapGoalToDb(newGoal, user.id));
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Add goal failed', err);
+        console.warn('[Sync] Add goal to cloud failed:', err.message);
       }
     }
 
@@ -1122,7 +1116,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Update goal failed', err);
+        console.warn('[Sync] Update goal in cloud failed:', err.message);
       }
     }
 
@@ -1140,7 +1134,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Delete goal failed', err);
+        console.warn('[Sync] Delete goal from cloud failed:', err.message);
       }
     }
 
@@ -1158,7 +1152,7 @@ export const FinanceProvider = ({ children }) => {
           .insert(mapWalletToDb(newWallet, user.id));
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Add wallet failed', err);
+        console.warn('[Sync] Add wallet to cloud failed:', err.message);
       }
     }
 
@@ -1184,7 +1178,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Update wallet failed', err);
+        console.warn('[Sync] Update wallet in cloud failed:', err.message);
       }
     }
 
@@ -1212,7 +1206,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (delErr) throw delErr;
       } catch (err) {
-        return reportCloudError('Delete wallet failed', err);
+        console.warn('[Sync] Delete wallet from cloud failed:', err.message);
       }
     }
 
@@ -1232,7 +1226,7 @@ export const FinanceProvider = ({ children }) => {
           .insert(mapRecurringToDb(newRec, user.id));
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Add recurring transaction failed', err);
+        console.warn('[Sync] Add recurring to cloud failed:', err.message);
       }
     }
 
@@ -1250,7 +1244,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Delete recurring transaction failed', err);
+        console.warn('[Sync] Delete recurring from cloud failed:', err.message);
       }
     }
 
@@ -1291,7 +1285,7 @@ export const FinanceProvider = ({ children }) => {
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
-        return reportCloudError('Trigger recurring transaction failed', err);
+        console.warn('[Sync] Trigger recurring in cloud failed:', err.message);
       }
     }
     return true;
@@ -1338,7 +1332,7 @@ export const FinanceProvider = ({ children }) => {
         if (goalsToInsert.length > 0) throwIfSupabaseError(await supabase.from('goals').insert(goalsToInsert));
         if (recurringToInsert.length > 0) throwIfSupabaseError(await supabase.from('recurring_txs').insert(recurringToInsert));
       } catch (err) {
-        return reportCloudError('Load demo data failed', err);
+        console.warn('[Sync] Load demo data to cloud failed:', err.message);
       }
     }
     return true;
@@ -1367,7 +1361,7 @@ export const FinanceProvider = ({ children }) => {
         const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, user.id));
         throwIfSupabaseError(await supabase.from('wallets').insert(defaultWalletsWithUser));
       } catch (err) {
-        return reportCloudError('Reset cloud data failed', err);
+        console.warn('[Sync] Reset cloud data failed:', err.message);
       }
     }
     return true;
@@ -1445,7 +1439,7 @@ export const FinanceProvider = ({ children }) => {
             throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, user.id))));
           }
         } catch (err) {
-          return reportCloudError('Import cloud data failed', err);
+          console.warn('[Sync] Import cloud data failed:', err.message);
         }
       }
 
