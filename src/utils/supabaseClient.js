@@ -1,17 +1,24 @@
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://byxxbkhjdfqsbocebkgj.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbG...2mb4';
+const env = (typeof import.meta !== 'undefined' && import.meta.env) || {};
+const SUPABASE_URL = env.VITE_SUPABASE_URL || 'https://byxxbkhjdfqsbocebkgj.supabase.co';
+const SUPABASE_ANON_KEY = env.VITE_SUPABASE_ANON_KEY || 'eyJhbG...2mb4';
 
 // Validate API key — a real Supabase anon key is a JWT > 100 chars
 const isKeyValid = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 100 && SUPABASE_ANON_KEY.startsWith('eyJ');
 export const supabaseAvailable = isKeyValid;
 
 if (!supabaseAvailable) {
-  console.warn(
-    '[Supabase] API key is missing or truncated. The app will run in localStorage-only mode. ' +
-    'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables to enable cloud sync.'
-  );
+  const hasEnvVars = env.VITE_SUPABASE_URL || env.VITE_SUPABASE_ANON_KEY;
+  if (hasEnvVars) {
+    console.warn(
+      '[Supabase] Invalid configuration. The app will run in localStorage-only mode. ' +
+      'Please check your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.'
+    );
+  } else {
+    // Normal local-only operation, log a quiet info message instead of a warning
+    console.log('[Supabase] Running in local development mode (localStorage).');
+  }
 }
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {

@@ -1,6 +1,6 @@
 // Portfolio utility functions for investment tracking
-// Uses CoinGecko free API for crypto and a CORS proxy for stock prices
-import { supabase, supabaseAvailable } from './supabaseClient';
+// Uses Yahoo Finance chart API with a CORS proxy fallback list for robust fetching
+import { supabase, supabaseAvailable } from './supabaseClient.js';
 
 const STORAGE_KEY = 'family_finance_portfolio';
 
@@ -24,7 +24,7 @@ export const CATEGORY_COLORS = {
   'Other': '#64748b',
 };
 
-// Format USD
+// Format USD (Backward compatibility fallback)
 export const formatUSD = (value) => {
   if (value == null || isNaN(value)) return '$0.00';
   return new Intl.NumberFormat('en-US', {
@@ -105,14 +105,24 @@ export const saveHoldings = (holdings) => {
 
 const syncHoldingsToCloud = async (holdings) => {
   try {
-    // Delete all existing
-    const { data: existing } = await supabase.from('portfolio').select('id');
-    if (existing) {
-      for (const item of existing) {
-        await supabase.from('portfolio').delete().eq('id', item.id);
-      }
+    const currentIds = holdings.map(h => h.id);
+
+    // 1. Delete items in the database that are no longer in the holdings list
+    if (currentIds.length > 0) {
+      const formattedIds = currentIds.map(id => `'${id}'`).join(',');
+      await supabase
+        .from('portfolio')
+        .delete()
+        .filter('id', 'not.in', `(${formattedIds})`);
+    } else {
+      // If holdings is empty, delete everything
+      await supabase
+        .from('portfolio')
+        .delete()
+        .neq('id', 'placeholder-non-existent-id');
     }
-    // Insert new
+
+    // 2. Upsert the current holdings (insert or update)
     if (holdings.length > 0) {
       const rows = holdings.map(h => ({
         id: h.id,
@@ -122,7 +132,8 @@ const syncHoldingsToCloud = async (holdings) => {
         shares: h.shares,
         avg_cost: h.avgCost,
       }));
-      const { error } = await supabase.from('portfolio').insert(rows);
+      
+      const { error } = await supabase.from('portfolio').upsert(rows);
       if (error) throw error;
     }
   } catch (e) {
@@ -130,120 +141,213 @@ const syncHoldingsToCloud = async (holdings) => {
   }
 };
 
-// Fetch crypto prices from CoinGecko
-export const fetchCryptoPrices = async (symbols = ['BTC', 'ETH']) => {
-  const coinGeckoIds = {
-    BTC: 'bitcoin',
-    ETH: 'ethereum',
-    SOL: 'solana',
-    BNB: 'binancecoin',
-    XRP: 'ripple',
-    ADA: 'cardano',
-    DOGE: 'dogecoin',
-    DOT: 'polkadot',
-    AVAX: 'avalanche-2',
-    MATIC: 'matic-network',
-    LINK: 'chainlink',
-    UNI: 'uniswap',
-  };
+// List of free public CORS proxies to try in order (Fallback mechanism)
+const CORS_PROXIES = [
+  (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+];
 
-  const ids = symbols
-    .map(s => coinGeckoIds[s.toUpperCase()])
-    .filter(Boolean);
-
-  if (ids.length === 0) return {};
-
-  try {
-    const response = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(',')}&vs_currencies=usd&include_24hr_change=true`
-    );
-    if (!response.ok) throw new Error(`CoinGecko API error: ${response.status}`);
-    const data = await response.json();
-
-    const prices = {};
-    for (const [symbol, cgId] of Object.entries(coinGeckoIds)) {
-      if (data[cgId]) {
-        prices[symbol] = {
-          price: data[cgId].usd || 0,
-          change24h: data[cgId].usd_24h_change || 0,
-        };
+// Helper to fetch content through a working CORS proxy
+export const fetchWithProxy = async (url) => {
+  // If running in server-side Node environment (e.g. testing), bypass proxies entirely
+  if (typeof window === 'undefined') {
+    try {
+      const response = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+      if (response.ok) {
+        return response;
       }
+      throw new Error(`Direct fetch returned status ${response.status}`);
+    } catch (err) {
+      console.warn(`Direct fetch failed for ${url}:`, err.message);
     }
-    return prices;
-  } catch (err) {
-    console.warn('[Portfolio] Failed to fetch crypto prices:', err.message);
-    return {};
   }
+
+  let lastError = null;
+  for (const proxyFn of CORS_PROXIES) {
+    try {
+      const proxyUrl = proxyFn(url);
+      const response = await fetch(proxyUrl);
+      if (response.ok) {
+        return response;
+      }
+      throw new Error(`CORS proxy returned status ${response.status}`);
+    } catch (err) {
+      lastError = err;
+      console.warn(`Proxy failed for URL: ${url} using proxy ${proxyFn(url)}. Error:`, err.message);
+    }
+  }
+  throw lastError || new Error("All CORS proxies failed");
 };
 
-// Fetch stock prices using Yahoo Finance via a CORS proxy
+// Helper to convert currency using fetched exchange rates and fallbacks
+export const convertCurrency = (amount, from, to, rates = {}) => {
+  if (!from || !to || from === to) return amount;
+  const key = `${from.toUpperCase()}_${to.toUpperCase()}`;
+  if (rates[key]) return amount * rates[key];
+  
+  // Try inverse key
+  const inverseKey = `${to.toUpperCase()}_${from.toUpperCase()}`;
+  if (rates[inverseKey]) return amount / rates[inverseKey];
+  
+  // Sensible default fallbacks if rates are not loaded yet or request failed
+  const fallbacks = {
+    'USD_THB': 35.0,
+    'EUR_THB': 38.0,
+    'JPY_THB': 0.23,
+    'GBP_THB': 44.0,
+  };
+  
+  const fallbackKey = `${from.toUpperCase()}_${to.toUpperCase()}`;
+  if (fallbacks[fallbackKey]) return amount * fallbacks[fallbackKey];
+  
+  const fallbackInverseKey = `${to.toUpperCase()}_${from.toUpperCase()}`;
+  if (fallbacks[fallbackInverseKey]) return amount / fallbacks[fallbackInverseKey];
+  
+  return amount; // Fallback to no conversion if currency pair is unknown
+};
+
+// Fetch exchange rates from Yahoo Finance (e.g. USDTHB=X, EURTHB=X, etc.)
+export const fetchExchangeRates = async (fromCurrencies = [], toCurrency = 'THB') => {
+  const rates = {};
+  const uniqueFrom = [...new Set(fromCurrencies)].filter(c => c && c.toUpperCase() !== toCurrency.toUpperCase());
+  if (uniqueFrom.length === 0) return {};
+
+  const pairs = uniqueFrom.map(c => `${c.toUpperCase()}${toCurrency.toUpperCase()}=X`);
+  
+  const promises = pairs.map(async (pair) => {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${pair}?interval=1d&range=1d`;
+      const response = await fetchWithProxy(url);
+      const data = await response.json();
+      const meta = data.chart?.result?.[0]?.meta;
+      if (meta && meta.regularMarketPrice) {
+        const from = pair.substring(0, 3);
+        rates[`${from}_${toCurrency.toUpperCase()}`] = meta.regularMarketPrice;
+      }
+    } catch (err) {
+      console.warn(`[Portfolio] Failed to fetch exchange rate for ${pair}:`, err.message);
+    }
+  });
+
+  await Promise.all(promises);
+  return rates;
+};
+
+// Fetch stock prices using Yahoo Finance chart API
 export const fetchStockPrices = async (symbols = []) => {
   if (symbols.length === 0) return {};
 
   const prices = {};
 
-  // Try fetching from Yahoo Finance quote endpoint using allorigins proxy
-  try {
-    const symbolsStr = symbols.join(',');
-    const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbolsStr}`;
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    const response = await fetch(proxyUrl);
-
-    if (response.ok) {
+  const promises = symbols.map(async (symbol) => {
+    try {
+      const cleanSymbol = symbol.toUpperCase().trim();
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${cleanSymbol}?interval=1d&range=1d`;
+      const response = await fetchWithProxy(url);
       const data = await response.json();
-      if (data.quoteResponse?.result) {
-        for (const quote of data.quoteResponse.result) {
-          prices[quote.symbol] = {
-            price: quote.regularMarketPrice || 0,
-            change24h: quote.regularMarketChangePercent || 0,
-            name: quote.shortName || quote.longName || quote.symbol,
-          };
-        }
-        return prices;
+      const meta = data.chart?.result?.[0]?.meta;
+      if (meta) {
+        const price = meta.regularMarketPrice || 0;
+        const prevClose = meta.chartPreviousClose || price;
+        const change24h = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+        prices[symbol] = {
+          price,
+          change24h,
+          name: meta.longName || meta.shortName || symbol,
+          currency: meta.currency || 'USD',
+        };
       }
+    } catch (err) {
+      console.warn(`[Portfolio] Failed to fetch stock price for ${symbol}:`, err.message);
     }
-  } catch (err) {
-    console.warn('[Portfolio] Yahoo Finance proxy failed:', err.message);
-  }
+  });
 
-  // Fallback: return empty prices so we show "N/A"
+  await Promise.all(promises);
   return prices;
 };
 
-// Calculate portfolio statistics
-export const calculatePortfolioStats = (holdings, livePrices) => {
+// Fetch crypto prices using Yahoo Finance chart API (BTC -> BTC-USD)
+export const fetchCryptoPrices = async (symbols = []) => {
+  if (symbols.length === 0) return {};
+
+  const cleanSymbols = symbols.map(s => s.toUpperCase().trim());
+  const prices = {};
+
+  const promises = cleanSymbols.map(async (originalSymbol) => {
+    try {
+      // Append -USD if not present (Yahoo Finance style)
+      const yahooSymbol = originalSymbol.endsWith('-USD') ? originalSymbol : `${originalSymbol}-USD`;
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`;
+      const response = await fetchWithProxy(url);
+      const data = await response.json();
+      const meta = data.chart?.result?.[0]?.meta;
+      if (meta) {
+        const price = meta.regularMarketPrice || 0;
+        const prevClose = meta.chartPreviousClose || price;
+        const change24h = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+        prices[originalSymbol] = {
+          price,
+          change24h,
+          name: originalSymbol,
+          currency: 'USD',
+        };
+      }
+    } catch (err) {
+      console.warn(`[Portfolio] Failed to fetch crypto price for ${originalSymbol}:`, err.message);
+    }
+  });
+
+  await Promise.all(promises);
+  return prices;
+};
+
+// Calculate portfolio statistics with multi-currency conversion
+export const calculatePortfolioStats = (holdings, livePrices, targetCurrency = 'THB', rates = {}) => {
   let totalValue = 0;
   let totalCost = 0;
   let totalDayChange = 0;
 
   const enriched = holdings.map(h => {
     const live = livePrices[h.symbol] || {};
-    const currentPrice = live.price || h.avgCost; // fallback to avg cost
+    const assetCurrency = live.currency || (h.symbol.endsWith('.BK') ? 'THB' : 'USD');
+    const currentPrice = live.price || h.avgCost; // fallback to average cost
     const change24h = live.change24h || 0;
-    const value = h.shares * currentPrice;
-    const cost = h.shares * h.avgCost;
-    const pnl = value - cost;
-    const pnlPercent = cost > 0 ? ((value - cost) / cost) * 100 : 0;
-    const dayChangeValue = value * (change24h / 100);
 
-    totalValue += value;
-    totalCost += cost;
-    totalDayChange += dayChangeValue;
+    // Calculations in native currency of the asset
+    const valueNative = h.shares * currentPrice;
+    const costNative = h.shares * h.avgCost;
+    const pnlNative = valueNative - costNative;
+    const pnlPercent = costNative > 0 ? (pnlNative / costNative) * 100 : 0;
+
+    // Convert values to dashboard target currency
+    const valueTarget = convertCurrency(valueNative, assetCurrency, targetCurrency, rates);
+    const costTarget = convertCurrency(costNative, assetCurrency, targetCurrency, rates);
+    const pnlTarget = valueTarget - costTarget;
+    const dayChangeValueTarget = valueTarget * (change24h / 100);
+
+    totalValue += valueTarget;
+    totalCost += costTarget;
+    totalDayChange += dayChangeValueTarget;
 
     return {
       ...h,
       currentPrice,
+      currency: assetCurrency,
       change24h,
-      value,
-      cost,
-      pnl,
+      value: valueNative,        // value in asset's native currency (for table detail)
+      cost: costNative,          // cost in asset's native currency (for table detail)
+      pnl: pnlNative,            // P&L in asset's native currency (for table detail)
       pnlPercent,
-      dayChangeValue,
+      valueTarget,               // value in system primary currency (for sums)
+      costTarget,                // cost in system primary currency (for sums)
+      pnlTarget,                 // P&L in system primary currency (for sums)
+      dayChangeValueTarget,
     };
   });
 
   const totalPnL = totalValue - totalCost;
-  const totalPnLPercent = totalCost > 0 ? ((totalValue - totalCost) / totalCost) * 100 : 0;
+  const totalPnLPercent = totalCost > 0 ? (totalPnL / totalCost) * 100 : 0;
 
   return {
     holdings: enriched,
@@ -256,7 +360,7 @@ export const calculatePortfolioStats = (holdings, livePrices) => {
   };
 };
 
-// Calculate allocation for pie chart
+// Calculate allocation for pie chart (in target currency)
 export const calculateAllocation = (enrichedHoldings) => {
   const grouped = {};
 
@@ -265,7 +369,7 @@ export const calculateAllocation = (enrichedHoldings) => {
     if (!grouped[cat]) {
       grouped[cat] = { name: cat, value: 0, color: CATEGORY_COLORS[cat] || '#64748b' };
     }
-    grouped[cat].value += h.value;
+    grouped[cat].value += h.valueTarget || h.value;
   });
 
   return Object.values(grouped).sort((a, b) => b.value - a.value);

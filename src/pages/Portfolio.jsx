@@ -6,12 +6,15 @@ import {
   TrendingUp, TrendingDown, DollarSign, PieChart as PieChartIcon,
   Plus, Pencil, Trash2, RefreshCw, Loader2, AlertTriangle, X
 } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip } from 'recharts';
 import {
-  loadHoldings, loadHoldingsFromCloud, saveHoldings, fetchCryptoPrices, fetchStockPrices,
+  loadHoldings, loadHoldingsFromCloud, saveHoldings, 
+  fetchCryptoPrices, fetchStockPrices, fetchExchangeRates,
   calculatePortfolioStats, calculateAllocation,
-  formatUSD, formatPercent, formatNumber, CATEGORY_COLORS, DEFAULT_HOLDINGS
+  formatPercent, formatNumber, CATEGORY_COLORS, DEFAULT_HOLDINGS
 } from '../utils/portfolioData';
+import { useFinance } from '../context/FinanceContext';
+import { formatMoney } from '../utils/constants';
 
 const CATEGORY_OPTIONS = ['US Stock', 'Crypto', 'ETF', 'Bond', 'Other'];
 
@@ -47,23 +50,26 @@ const HoldingModal = ({ holding, onSave, onClose }) => {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">Symbol</label>
+            <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">Symbol (สัญลักษณ์)</label>
             <input
               type="text"
               value={form.symbol}
               onChange={e => setForm({ ...form, symbol: e.target.value })}
-              placeholder="BTC, AAPL, etc."
+              placeholder="เช่น BTC, AAPL, PTT.BK"
               className="w-full bg-[color:var(--bg-primary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500"
               required
             />
+            <p className="text-[10px] text-[color:var(--text-muted)] mt-1">
+              * หุ้นสหรัฐฯ เช่น <b>AAPL</b>, <b>TSLA</b> | หุ้นไทย เช่น <b>PTT.BK</b>, <b>CPALL.BK</b> (ต้องเติม .BK) | คริปโต เช่น <b>BTC</b>, <b>ETH</b>
+            </p>
           </div>
           <div>
-            <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">ชื่อ</label>
+            <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">ชื่อสินทรัพย์</label>
             <input
               type="text"
               value={form.name}
               onChange={e => setForm({ ...form, name: e.target.value })}
-              placeholder="Bitcoin, Apple, etc."
+              placeholder="Bitcoin, Apple, ปตท., etc."
               className="w-full bg-[color:var(--bg-primary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500"
             />
           </div>
@@ -92,7 +98,7 @@ const HoldingModal = ({ holding, onSave, onClose }) => {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">ต้นทุนเฉลี่ย (USD)</label>
+              <label className="block text-xs font-bold text-[color:var(--text-muted)] uppercase mb-1">ต้นทุนเฉลี่ย (ต่อหน่วย)</label>
               <input
                 type="number"
                 value={form.avgCost}
@@ -105,6 +111,9 @@ const HoldingModal = ({ holding, onSave, onClose }) => {
               />
             </div>
           </div>
+          <p className="text-[10px] text-[color:var(--text-muted)] leading-relaxed">
+            * <b>หมายเหตุ:</b> ระบุราคาต้นทุนตามสกุลเงินดั้งเดิมของสินทรัพย์ เช่น หุ้นไทยระบุเป็นบาท (THB), หุ้นสหรัฐฯ และคริปโตระบุเป็นดอลลาร์ (USD) ระบบจะแปลงมูลค่ารวมให้สอดคล้องกับสกุลเงินหลักของแอพโดยอัตโนมัติ
+          </p>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={onClose} className="flex-1">ยกเลิก</Button>
             <Button type="submit" className="flex-1">บันทึก</Button>
@@ -116,8 +125,10 @@ const HoldingModal = ({ holding, onSave, onClose }) => {
 };
 
 export const Portfolio = () => {
+  const { currency } = useFinance();
   const [holdings, setHoldings] = useState(() => loadHoldings());
   const [livePrices, setLivePrices] = useState({});
+  const [rates, setRates] = useState({});
   const [loading, setLoading] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [modal, setModal] = useState(null); // null | 'add' | holding object
@@ -130,55 +141,68 @@ export const Portfolio = () => {
     });
   }, []);
 
-  // Save holdings to localStorage + cloud whenever they change
-  useEffect(() => {
-    saveHoldings(holdings);
-  }, [holdings]);
-
-  // Fetch live prices
+  // Fetch live prices and exchange rates
   const refreshPrices = useCallback(async () => {
     setLoading(true);
     try {
       const cryptoSymbols = holdings.filter(h => h.category === 'Crypto').map(h => h.symbol);
       const stockSymbols = holdings.filter(h => h.category !== 'Crypto').map(h => h.symbol);
+      
+      const fromCurrencies = holdings.map(h => 
+        h.symbol.toUpperCase().endsWith('.BK') ? 'THB' : 'USD'
+      );
 
-      const [cryptoPrices, stockPrices] = await Promise.all([
+      const [cryptoPrices, stockPrices, exchangeRates] = await Promise.all([
         fetchCryptoPrices(cryptoSymbols),
         fetchStockPrices(stockSymbols),
+        fetchExchangeRates(fromCurrencies, currency),
       ]);
 
       setLivePrices({ ...cryptoPrices, ...stockPrices });
+      setRates(exchangeRates);
       setLastUpdated(new Date());
     } catch (err) {
       console.warn('[Portfolio] Price refresh error:', err);
     } finally {
       setLoading(false);
     }
-  }, [holdings]);
+  }, [holdings, currency]);
 
   useEffect(() => {
     refreshPrices();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [refreshPrices]);
 
   // Calculate stats
-  const stats = useMemo(() => calculatePortfolioStats(holdings, livePrices), [holdings, livePrices]);
+  const stats = useMemo(() => 
+    calculatePortfolioStats(holdings, livePrices, currency, rates), 
+    [holdings, livePrices, currency, rates]
+  );
+  
   const allocation = useMemo(() => calculateAllocation(stats.holdings), [stats.holdings]);
 
   const handleSave = (holding) => {
     setHoldings(prev => {
       const exists = prev.find(h => h.id === holding.id);
-      if (exists) return prev.map(h => h.id === holding.id ? holding : h);
-      return [...prev, holding];
+      const next = exists 
+        ? prev.map(h => h.id === holding.id ? holding : h)
+        : [...prev, holding];
+      saveHoldings(next); // Save directly inside handler
+      return next;
     });
     setModal(null);
   };
 
   const handleDelete = (id) => {
-    setHoldings(prev => prev.filter(h => h.id !== id));
+    setHoldings(prev => {
+      const next = prev.filter(h => h.id !== id);
+      saveHoldings(next); // Save directly inside handler
+      return next;
+    });
   };
 
   const resetToDefault = () => {
     setHoldings(DEFAULT_HOLDINGS);
+    saveHoldings(DEFAULT_HOLDINGS); // Save directly inside handler
   };
 
   return (
@@ -212,8 +236,8 @@ export const Portfolio = () => {
         <Card className="p-5 border-blue-500/20 bg-blue-500/5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">มูลค่ารวม</p>
-              <p className="text-2xl font-black text-[color:var(--text-primary)] mt-1">{formatUSD(stats.totalValue)}</p>
+              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">มูลค่ารวม ({currency})</p>
+              <p className="text-2xl font-black text-[color:var(--text-primary)] mt-1">{formatMoney(stats.totalValue, currency)}</p>
             </div>
             <DollarSign size={28} className="text-blue-400" />
           </div>
@@ -221,9 +245,9 @@ export const Portfolio = () => {
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">กำไร/ขาดทุน</p>
+              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">กำไร/ขาดทุนรวม</p>
               <p className={`text-2xl font-black mt-1 ${stats.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {formatUSD(stats.totalPnL)}
+                {formatMoney(stats.totalPnL, currency)}
               </p>
               <p className={`text-xs mt-0.5 ${stats.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {formatPercent(stats.totalPnLPercent)}
@@ -237,7 +261,7 @@ export const Portfolio = () => {
             <div>
               <p className="text-xs font-semibold text-[color:var(--text-secondary)]">เปลี่ยนแปลงวันนี้</p>
               <p className={`text-2xl font-black mt-1 ${stats.totalDayChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {formatUSD(stats.totalDayChange)}
+                {formatMoney(stats.totalDayChange, currency)}
               </p>
               <p className={`text-xs mt-0.5 ${stats.totalDayChange >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                 {formatPercent(stats.dayChangePercent)}
@@ -249,8 +273,8 @@ export const Portfolio = () => {
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">ต้นทุนรวม</p>
-              <p className="text-2xl font-black text-[color:var(--text-primary)] mt-1">{formatUSD(stats.totalCost)}</p>
+              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">ต้นทุนรวม ({currency})</p>
+              <p className="text-2xl font-black text-[color:var(--text-primary)] mt-1">{formatMoney(stats.totalCost, currency)}</p>
             </div>
             <PieChartIcon size={28} className="text-violet-400" />
           </div>
@@ -262,34 +286,32 @@ export const Portfolio = () => {
         {/* Allocation Pie Chart */}
         <Card className="p-6">
           <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">สัดส่วนสินทรัพย์ (Allocation)</h2>
-          <div ref={chartSize.ref} className="h-[250px] w-full">
+          <div ref={chartSize.ref} className="h-[250px] w-full flex items-center justify-center">
             {allocation.length > 0 && chartSize.isReady ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={allocation}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={100}
-                    paddingAngle={3}
-                    dataKey="value"
-                  >
-                    {allocation.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: 'var(--bg-card)',
-                      borderColor: 'var(--border-color)',
-                      borderRadius: '12px',
-                      color: 'var(--text-primary)',
-                    }}
-                    formatter={(value) => formatUSD(value)}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
+              <PieChart width={chartSize.width} height={chartSize.height}>
+                <Pie
+                  data={allocation}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={3}
+                  dataKey="value"
+                >
+                  {allocation.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: 'var(--bg-card)',
+                    borderColor: 'var(--border-color)',
+                    borderRadius: '12px',
+                    color: 'var(--text-primary)',
+                  }}
+                  formatter={(value) => formatMoney(value, currency)}
+                />
+              </PieChart>
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-[color:var(--text-muted)]">
                 ไม่มีข้อมูล
@@ -331,10 +353,10 @@ export const Portfolio = () => {
                     <th className="text-left py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">Symbol</th>
                     <th className="text-left py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider hidden sm:table-cell">ประเภท</th>
                     <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">จำนวน</th>
-                    <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">ราคา</th>
+                    <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">ราคาตลาด</th>
                     <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider hidden sm:table-cell">ต้นทุนเฉลี่ย</th>
                     <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">มูลค่า</th>
-                    <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">P&L</th>
+                    <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider">P&L (กำไร/ขาดทุน)</th>
                     <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider hidden md:table-cell">24h</th>
                     <th className="text-right py-2 text-[10px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider"></th>
                   </tr>
@@ -358,12 +380,32 @@ export const Portfolio = () => {
                         </span>
                       </td>
                       <td className="py-3 text-right text-[color:var(--text-secondary)]">{formatNumber(h.shares, h.shares < 1 ? 4 : 2)}</td>
-                      <td className="py-3 text-right text-[color:var(--text-primary)] font-medium">{livePrices[h.symbol] ? formatUSD(h.currentPrice) : <span className="text-[color:var(--text-muted)]">—</span>}</td>
-                      <td className="py-3 text-right text-[color:var(--text-secondary)] hidden sm:table-cell">{formatUSD(h.avgCost)}</td>
-                      <td className="py-3 text-right text-[color:var(--text-primary)] font-bold">{formatUSD(h.value)}</td>
+                      <td className="py-3 text-right text-[color:var(--text-primary)] font-medium">
+                        {livePrices[h.symbol] ? formatMoney(h.currentPrice, h.currency) : <span className="text-[color:var(--text-muted)]">—</span>}
+                      </td>
+                      <td className="py-3 text-right text-[color:var(--text-secondary)] hidden sm:table-cell">
+                        {formatMoney(h.avgCost, h.currency)}
+                      </td>
+                      <td className="py-3 text-right text-[color:var(--text-primary)] font-bold">
+                        <div>
+                          <span>{formatMoney(h.value, h.currency)}</span>
+                          {h.currency !== currency && (
+                            <span className="block text-[10px] text-[color:var(--text-muted)] font-normal mt-0.5">
+                              {formatMoney(h.valueTarget, currency)}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className={`py-3 text-right font-bold ${h.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {formatUSD(h.pnl)}
-                        <span className="block text-[10px]">{formatPercent(h.pnlPercent)}</span>
+                        <div>
+                          <span>{formatMoney(h.pnl, h.currency)}</span>
+                          <span className="block text-[10px] font-normal">{formatPercent(h.pnlPercent)}</span>
+                          {h.currency !== currency && (
+                            <span className="block text-[9px] text-[color:var(--text-muted)] font-normal mt-0.5">
+                              ({formatMoney(h.pnlTarget, currency)})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className={`py-3 text-right font-medium hidden md:table-cell ${h.change24h >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
                         {livePrices[h.symbol] ? formatPercent(h.change24h) : '—'}
