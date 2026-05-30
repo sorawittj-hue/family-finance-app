@@ -559,7 +559,7 @@ export const FinanceProvider = ({ children }) => {
 
   // Manual refresh from cloud (pull latest data)
   const refreshFromCloud = useCallback(async () => {
-    if (!user || !isOnline) return { success: false, error: 'ไม่ได้เชื่อมต่อ' };
+    if (!user) return { success: false, error: 'ไม่ได้เชื่อมต่อ' };
     setSyncing(true);
     try {
       await fetchCloudData(user.id);
@@ -569,7 +569,38 @@ export const FinanceProvider = ({ children }) => {
     } finally {
       setSyncing(false);
     }
-  }, [user, isOnline, fetchCloudData]);
+  }, [user, fetchCloudData]);
+
+  // --- Polling: ดึงข้อมูลจาก Supabase ทุก 30 วินาที (fallback เมื่อ Realtime ไม่ส่ง event) ---
+  useEffect(() => {
+    if (!user) return;
+    const POLL_INTERVAL = 30_000; // 30 seconds
+    const interval = setInterval(async () => {
+      try {
+        await fetchCloudData(user.id);
+      } catch (err) {
+        console.warn('[Polling] fetchCloudData error:', err);
+      }
+    }, POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [user, fetchCloudData]);
+
+  // --- Visibility: refresh ทันทีเมื่อผู้ใช้กลับมาที่ tab/แอพ ---
+  useEffect(() => {
+    if (!user) return;
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Sync] Tab visible — refreshing from cloud...');
+        try {
+          await fetchCloudData(user.id);
+        } catch (err) {
+          console.warn('[Sync] visibilitychange fetch error:', err);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, fetchCloudData]);
 
 
 
@@ -718,7 +749,7 @@ export const FinanceProvider = ({ children }) => {
       return updated;
     });
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('transactions')
@@ -743,7 +774,7 @@ export const FinanceProvider = ({ children }) => {
       return prev.filter((t) => t.id !== id);
     });
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('transactions')
@@ -777,7 +808,7 @@ export const FinanceProvider = ({ children }) => {
       });
     });
 
-    if (user && isOnline && mergedTx) {
+    if (user && mergedTx) {
       try {
         const { error } = await supabase
           .from('transactions')
@@ -834,7 +865,7 @@ export const FinanceProvider = ({ children }) => {
       return updated;
     });
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('transactions')
@@ -859,7 +890,7 @@ export const FinanceProvider = ({ children }) => {
 
     setBudgets((prev) => ({ ...prev, [categoryId]: Number(amount) }));
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('budgets')
@@ -888,7 +919,7 @@ export const FinanceProvider = ({ children }) => {
       return next;
     });
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('budgets')
@@ -917,7 +948,7 @@ export const FinanceProvider = ({ children }) => {
       };
     });
 
-    if (user && isOnline && fromLimit >= amount) {
+    if (user && fromLimit >= amount) {
       try {
         const { error } = await supabase
           .from('budgets')
@@ -944,7 +975,7 @@ export const FinanceProvider = ({ children }) => {
 
     setGoals((prev) => [...prev, newGoal]);
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('goals')
@@ -968,7 +999,7 @@ export const FinanceProvider = ({ children }) => {
       })
     );
 
-    if (user && isOnline && updatedGoal) {
+    if (user && updatedGoal) {
       try {
         const { error } = await supabase
           .from('goals')
@@ -984,7 +1015,7 @@ export const FinanceProvider = ({ children }) => {
   const deleteGoal = async (id) => {
     setGoals((prev) => prev.filter((g) => g.id !== id));
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('goals')
@@ -1001,7 +1032,7 @@ export const FinanceProvider = ({ children }) => {
     const newWallet = { ...wallet, id: `wallet-${generateUUID()}`, type: wallet.type || 'bank' };
     setWallets(prev => [...prev, newWallet]);
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('wallets')
@@ -1023,7 +1054,7 @@ export const FinanceProvider = ({ children }) => {
       return w;
     }));
 
-    if (user && isOnline && mergedWallet) {
+    if (user && mergedWallet) {
       try {
         const { error } = await supabase
           .from('wallets')
@@ -1046,7 +1077,7 @@ export const FinanceProvider = ({ children }) => {
     
     setTransactions(prev => prev.map(tx => tx.walletId === id ? { ...tx, walletId: fallbackWalletId } : tx));
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error: delErr } = await supabase
           .from('wallets')
@@ -1070,7 +1101,7 @@ export const FinanceProvider = ({ children }) => {
     const newRec = { ...bill, dueDay, id: `rec-${generateUUID()}`, lastTriggered: '' };
     setRecurringTxs(prev => [...prev, newRec]);
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('recurring_txs')
