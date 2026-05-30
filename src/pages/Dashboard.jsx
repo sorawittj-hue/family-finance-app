@@ -6,7 +6,7 @@ import { formatMoney, formatMoneyShort } from '../utils/constants';
 import { 
   ArrowUpRight, ArrowDownRight, ArrowRightLeft, AlertTriangle, 
   PiggyBank, ShieldCheck, TrendingUp, Utensils, Car, ShoppingBag, 
-  Lightbulb, Check, Plus, BellRing, X
+  Lightbulb, Check, Plus, BellRing, X, Wallet
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from 'recharts';
 import { format, subDays } from 'date-fns';
@@ -157,7 +157,7 @@ export const Dashboard = () => {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
         <Card className="p-6 relative overflow-hidden group border-blue-500/25 bg-blue-500/[0.02]">
           <div className="relative z-10">
             <h3 className="text-sm font-bold text-[color:var(--text-secondary)] mb-1">สินทรัพย์สุทธิ (Net Worth)</h3>
@@ -178,6 +178,23 @@ export const Dashboard = () => {
             </div>
           </div>
           <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500" />
+        </Card>
+
+        <Card className="p-6 relative overflow-hidden group border-cyan-500/25 bg-cyan-500/[0.02]">
+          <div className="relative z-10 flex justify-between items-start">
+            <div>
+              <h3 className="text-sm font-semibold text-[color:var(--text-secondary)] mb-1">เงินใช้ได้เดือนนี้</h3>
+              <p className={`text-2xl font-black tracking-tight ${report.endingBalance >= 0 ? 'text-cyan-300' : 'text-rose-400'}`}>
+                {formatMoney(report.endingBalance, currency)}
+              </p>
+              <p className="text-[11px] text-[color:var(--text-muted)] mt-2">
+                ยกมา {formatMoney(report.openingBalance, currency)} + รับ {formatMoney(report.income, currency)}
+              </p>
+            </div>
+            <div className="w-10 h-10 rounded-full bg-cyan-500/10 flex items-center justify-center text-cyan-300">
+              <Wallet size={20} />
+            </div>
+          </div>
         </Card>
         
         <Card className="p-6 relative overflow-hidden group">
@@ -226,10 +243,13 @@ export const Dashboard = () => {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
               <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
                 <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold mb-2">
-                  <TrendingUp size={14} /> กระแสเงินสดสุทธิ
+                  <TrendingUp size={14} /> คงเหลือหลังใช้จ่าย
                 </div>
-                <p className={`text-lg font-black ${report.netCashflow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  {formatMoney(report.netCashflow, currency)}
+                <p className={`text-lg font-black ${report.endingBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {formatMoney(report.endingBalance, currency)}
+                </p>
+                <p className="text-[10px] text-[color:var(--text-muted)] mt-1">
+                  เดือนนี้สุทธิ {formatMoney(report.netCashflow, currency)}
                 </p>
               </div>
               <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">

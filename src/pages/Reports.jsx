@@ -34,13 +34,19 @@ const getActionPlan = (report, currency) => {
   const topCategory = report.topCategories[0];
   const riskyBudget = report.budgetUsage.find((budget) => budget.status !== 'ok');
 
-  if (report.netCashflow < 0) {
+  if (report.endingBalance < 0) {
     actions.push({
       tone: 'danger',
-      title: 'หยุดเลือดไหลของ cashflow',
+      title: 'หยุดเงินคงเหลือติดลบ',
       detail: topCategory
-        ? `ลดหมวด ${topCategory.name} ก่อน เพราะใช้ไป ${formatMoney(topCategory.amount, currency)} ในเดือนนี้`
+        ? `ยอดหลังรวมเงินยกมาติดลบ ให้ลดหมวด ${topCategory.name} ก่อน เพราะใช้ไป ${formatMoney(topCategory.amount, currency)} ในเดือนนี้`
         : 'ลดรายจ่ายไม่จำเป็นและตรวจรายการประจำทั้งหมด',
+    });
+  } else if (report.netCashflow < 0 && report.openingBalance > 0) {
+    actions.push({
+      tone: 'warning',
+      title: 'ใช้เงินยกมาอย่างมีเพดาน',
+      detail: `เดือนนี้ใช้มากกว่ารับ ${formatMoney(Math.abs(report.netCashflow), currency)} แต่ยังเหลือหลังรวมยอดยกมา ${formatMoney(report.endingBalance, currency)}`,
     });
   }
 
@@ -110,13 +116,16 @@ export const Reports = () => {
       [],
       ['ตัวชี้วัด', 'ค่า'],
       ['คะแนนสุขภาพ', `${report.healthScore}/100`],
+      ['ยอดยกมาต้นเดือน', report.openingBalance],
       ['รายรับ', report.income],
       ['รายจ่าย', report.expense],
       ['เงินออม', report.saving],
       ['กระแสเงินสดสุทธิ', report.netCashflow],
+      ['เงินใช้ได้เดือนนี้', report.availableForMonth],
+      ['เงินคงเหลือหลังใช้จ่าย', report.endingBalance],
       ['อัตราออม', `${report.savingRate.toFixed(2)}%`],
       ['คาดการณ์รายจ่าย', report.projectedExpense],
-      ['ยอดเงินรวม', report.totalBalance],
+      ['ยอดเงินรวมสิ้นเดือน', report.totalBalance],
       ['เงินสำรองครอบคลุม (เดือน)', report.runwayMonths.toFixed(2)],
       [],
       ['หมวดรายจ่ายสูงสุด'],
@@ -180,10 +189,11 @@ export const Reports = () => {
         <Card className="p-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">กระแสเงินสดสุทธิ</p>
-              <p className={`text-2xl font-black mt-1 ${report.netCashflow >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatMoney(report.netCashflow, currency)}</p>
+              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">เงินคงเหลือหลังใช้จ่าย</p>
+              <p className={`text-2xl font-black mt-1 ${report.endingBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatMoney(report.endingBalance, currency)}</p>
+              <p className="text-[11px] text-[color:var(--text-muted)] mt-1">สุทธิเดือนนี้ {formatMoney(report.netCashflow, currency)}</p>
             </div>
-            {report.netCashflow >= 0 ? <TrendingUp size={28} className="text-emerald-400" /> : <TrendingDown size={28} className="text-rose-400" />}
+            {report.endingBalance >= 0 ? <TrendingUp size={28} className="text-emerald-400" /> : <TrendingDown size={28} className="text-rose-400" />}
           </div>
         </Card>
         <Card className="p-5">
@@ -242,11 +252,14 @@ export const Reports = () => {
           <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">สรุปเดือนนี้</h2>
           <div className="space-y-3">
             {[
+              ['ยอดยกมาต้นเดือน', report.openingBalance, 'text-cyan-300'],
               ['รายรับ', report.income, 'text-emerald-400'],
               ['รายจ่าย', report.expense, 'text-rose-400'],
               ['เงินออม', report.saving, 'text-blue-400'],
+              ['เงินใช้ได้เดือนนี้', report.availableForMonth, 'text-[color:var(--text-primary)]'],
+              ['เงินคงเหลือหลังใช้จ่าย', report.endingBalance, report.endingBalance >= 0 ? 'text-emerald-400' : 'text-rose-400'],
               ['คาดการณ์รายจ่ายสิ้นเดือน', report.projectedExpense, 'text-amber-400'],
-              ['ยอดเงินรวมทุกกระเป๋า', report.totalBalance, 'text-[color:var(--text-primary)]'],
+              ['ยอดเงินรวมสิ้นเดือน', report.totalBalance, 'text-[color:var(--text-primary)]'],
             ].map(([label, value, className]) => (
               <div key={label} className="flex justify-between gap-3 border-b border-[color:var(--border-color)] pb-3 last:border-0">
                 <span className="text-sm text-[color:var(--text-secondary)]">{label}</span>

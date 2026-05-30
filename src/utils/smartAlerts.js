@@ -149,15 +149,29 @@ const buildCashflowAlerts = ({ alerts, report, settings, monthKey }) => {
     }));
   }
 
-  if (report.netCashflow < 0) {
+  if (report.endingBalance < 0) {
     alerts.push(createAlert({
-      id: `negative-cashflow-${monthKey}`,
+      id: `negative-balance-${monthKey}`,
       severity: 'danger',
       category: 'cashflow',
-      title: 'กระแสเงินสดเดือนนี้ติดลบ',
-      message: `รายจ่ายและเงินออมมากกว่ารายรับ ${Math.abs(report.netCashflow).toFixed(0)} ควรลดรายจ่ายหรือเลื่อนค่าใช้จ่ายที่ไม่จำเป็น`,
+      title: 'เงินคงเหลือหลังรวมยอดยกมาติดลบ',
+      message: `ยอดหลังใช้จ่ายเดือนนี้ติดลบ ${Math.abs(report.endingBalance).toFixed(0)} ควรลดรายจ่ายหรือเลื่อนค่าใช้จ่ายที่ไม่จำเป็น`,
       route: '/reports',
-      metadata: { netCashflow: report.netCashflow },
+      metadata: { endingBalance: report.endingBalance, netCashflow: report.netCashflow },
+    }));
+  } else if (report.netCashflow < 0 && report.openingBalance > 0) {
+    alerts.push(createAlert({
+      id: `using-carry-over-${monthKey}`,
+      severity: 'info',
+      category: 'cashflow',
+      title: 'เดือนนี้กำลังใช้เงินยกมา',
+      message: `สุทธิเดือนนี้ติดลบ ${Math.abs(report.netCashflow).toFixed(0)} แต่ยังมีเงินคงเหลือ ${report.endingBalance.toFixed(0)} หลังรวมยอดยกมา`,
+      route: '/reports',
+      metadata: {
+        openingBalance: report.openingBalance,
+        endingBalance: report.endingBalance,
+        netCashflow: report.netCashflow,
+      },
     }));
   }
 

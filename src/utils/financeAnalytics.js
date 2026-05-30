@@ -15,6 +15,11 @@ export const getSignedAmount = (transaction) => {
   return -amount;
 };
 
+const getTransactionDateKey = (transaction) => {
+  if (typeof transaction?.date !== 'string') return '';
+  return transaction.date.slice(0, 10);
+};
+
 export const getWalletBalances = (wallets, transactions) => (
   wallets.map((wallet) => {
     const balance = transactions
@@ -28,6 +33,22 @@ export const getWalletBalances = (wallets, transactions) => (
 export const filterTransactionsByMonth = (transactions, monthKey) => (
   transactions.filter((transaction) => transaction.date?.startsWith(monthKey))
 );
+
+const filterTransactionsBeforeMonth = (transactions, monthKey) => {
+  const monthStartKey = `${monthKey}-01`;
+  return transactions.filter((transaction) => {
+    const dateKey = getTransactionDateKey(transaction);
+    return dateKey && dateKey < monthStartKey;
+  });
+};
+
+const filterTransactionsThroughMonth = (transactions, monthKey, selectedMonthDate) => {
+  const monthEndKey = format(endOfMonth(selectedMonthDate), 'yyyy-MM-dd');
+  return transactions.filter((transaction) => {
+    const dateKey = getTransactionDateKey(transaction);
+    return dateKey && dateKey <= monthEndKey;
+  });
+};
 
 const sumAmounts = (transactions, predicate) => (
   transactions
@@ -83,12 +104,25 @@ const buildTopCategories = (transactions) => {
     .sort((a, b) => b.amount - a.amount);
 };
 
-const buildInsights = ({ income, expense, saving, netCashflow, projectedExpense, budgetUsage, debtRatio, runwayMonths }) => {
+const buildInsights = ({
+  income,
+  expense,
+  saving,
+  netCashflow,
+  openingBalance,
+  endingBalance,
+  projectedExpense,
+  budgetUsage,
+  debtRatio,
+  runwayMonths,
+}) => {
   const insights = [];
   const savingRate = income > 0 ? (saving / income) * 100 : 0;
 
-  if (netCashflow < 0) {
-    insights.push({ tone: 'danger', title: 'เงินสดติดลบในเดือนนี้', detail: 'รายจ่ายรวมเงินออมสูงกว่ารายรับ ควรลดรายการไม่จำเป็นหรือชะลอเงินออมบางส่วนก่อน' });
+  if (endingBalance < 0) {
+    insights.push({ tone: 'danger', title: 'เงินคงเหลือติดลบหลังรวมยอดยกมา', detail: 'รายจ่ายเดือนนี้กินเกินเงินที่มีจริง ควรลดรายการไม่จำเป็นหรือเลื่อนค่าใช้จ่ายบางส่วนทันที' });
+  } else if (netCashflow < 0 && openingBalance > 0) {
+    insights.push({ tone: 'warning', title: 'กำลังใช้เงินยกมาจากเดือนก่อน', detail: 'กระแสเงินสดเดือนนี้ติดลบ แต่ยังมีเงินต้นเดือนรองรับอยู่ ให้ดูยอดคงเหลือหลังใช้จ่ายเป็นตัวหลัก' });
   } else if (savingRate >= 20) {
     insights.push({ tone: 'success', title: 'อัตราออมแข็งแรง', detail: 'เงินออมเดือนนี้เกิน 20% ของรายรับ ถือว่าอยู่ในโซนดีมาก' });
   } else if (income > 0) {
@@ -135,13 +169,20 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
   const saving = sumAmounts(operatingTransactions, (transaction) => transaction.type === 'saving');
   const debtExpense = sumAmounts(operatingTransactions, (transaction) => transaction.type === 'expense' && transaction.category === 'debt');
   const netCashflow = income - expense - saving;
+  const monthOutflow = expense + saving;
   const savingRate = income > 0 ? (saving / income) * 100 : 0;
   const spendingRate = income > 0 ? (expense / income) * 100 : 0;
   const debtRatio = income > 0 ? (debtExpense / income) * 100 : 0;
   const averageDailyExpense = expense / elapsedDays;
   const projectedExpense = isCurrentMonth ? averageDailyExpense * daysInMonth : expense;
-  const walletBalances = getWalletBalances(wallets, transactions);
+  const openingTransactions = filterTransactionsBeforeMonth(transactions, monthKey);
+  const endingTransactions = filterTransactionsThroughMonth(transactions, monthKey, selectedMonthDate);
+  const openingWalletBalances = getWalletBalances(wallets, openingTransactions);
+  const walletBalances = getWalletBalances(wallets, endingTransactions);
+  const openingBalance = openingWalletBalances.reduce((sum, wallet) => sum + wallet.balance, 0);
+  const availableForMonth = openingBalance + income;
   const totalBalance = walletBalances.reduce((sum, wallet) => sum + wallet.balance, 0);
+  const endingBalance = totalBalance;
   const runwayMonths = expense > 0 ? totalBalance / expense : 0;
   const budgetUsage = buildBudgetUsage(monthTransactions, budgets);
   const overBudgetCount = budgetUsage.filter((budget) => budget.status === 'over').length;
@@ -152,7 +193,7 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
 
   let healthScore = 40;
   if (income > 0) healthScore += 10;
-  if (netCashflow >= 0) healthScore += 15;
+  if (endingBalance >= 0) healthScore += 15;
   if (savingRate >= 10) healthScore += 10;
   if (savingRate >= 20) healthScore += 10;
   if (overBudgetCount === 0) healthScore += 10;
@@ -169,6 +210,11 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
     saving,
     debtExpense,
     netCashflow,
+    monthOutflow,
+    openingBalance,
+    openingWalletBalances,
+    availableForMonth,
+    endingBalance,
     savingRate,
     spendingRate,
     debtRatio,
@@ -183,7 +229,18 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
     transactionCount: monthTransactions.length,
     operatingTransactionCount: operatingTransactions.length,
     healthScore: Math.max(0, Math.min(100, Math.round(healthScore))),
-    insights: buildInsights({ income, expense, saving, netCashflow, projectedExpense, budgetUsage, debtRatio, runwayMonths }),
+    insights: buildInsights({
+      income,
+      expense,
+      saving,
+      netCashflow,
+      openingBalance,
+      endingBalance,
+      projectedExpense,
+      budgetUsage,
+      debtRatio,
+      runwayMonths,
+    }),
   };
 };
 

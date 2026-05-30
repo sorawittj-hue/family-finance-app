@@ -104,15 +104,6 @@ export const AIAssistantBubble = () => {
     setIsLoading(true);
 
     try {
-      // Calculate current summary for context
-      const totalBalance = transactions.reduce((sum, tx) => {
-        if (tx.isTransfer) return sum; // transfer doesn't change net
-        if (tx.type === 'income') return sum + tx.amount;
-        if (tx.type === 'expense') return sum - tx.amount;
-        if (tx.type === 'saving') return sum - tx.amount; // saving deducts cash flow
-        return sum;
-      }, 0);
-
       const recentTxsStr = transactions.slice(0, 10).map(t => {
         const cat = getCategory(t.type, t.category);
         const wallet = wallets.find(w => w.id === t.walletId)?.name || 'เงินสด';
@@ -145,7 +136,10 @@ Your job is to parse their request into a structured JSON action and provide a h
 
 Current date: ${new Date().toISOString().split('T')[0]} (today).
 Current account status:
-- Net Balance: ${totalBalance} ${currency}
+- Net Balance: ${wealthSystem.report.totalBalance} ${currency}
+- Opening balance carried into this month: ${wealthSystem.report.openingBalance} ${currency}
+- Available this month before outflow: ${wealthSystem.report.availableForMonth} ${currency}
+- Balance after this month's activity: ${wealthSystem.report.endingBalance} ${currency}
 - Active Wallets:
 ${walletsStr}
 - Wealth Coach snapshot:
