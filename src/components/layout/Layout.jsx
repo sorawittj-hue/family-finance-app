@@ -3,6 +3,7 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { AIAssistantBubble } from '../AIAssistantBubble';
+import { NotificationCenter } from '../NotificationCenter';
 import { SyncStatusBanner } from '../ui/SyncStatusBanner';
 import { ToastContainer } from '../ui/Toast';
 
@@ -20,6 +21,7 @@ export const Layout = () => {
       </main>
 
       <BottomNav />
+      <NotificationCenter />
       <AIAssistantBubble />
       <ToastContainer />
     </div>

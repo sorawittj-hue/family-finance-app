@@ -6,7 +6,7 @@ import { formatMoney, formatMoneyShort } from '../utils/constants';
 import { 
   ArrowUpRight, ArrowDownRight, ArrowRightLeft, AlertTriangle, 
   PiggyBank, ShieldCheck, TrendingUp, Utensils, Car, ShoppingBag, 
-  Lightbulb, Check, Plus
+  Lightbulb, Check, Plus, BellRing, X
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from 'recharts';
 import { format, subDays } from 'date-fns';
@@ -21,8 +21,14 @@ const insightToneClass = {
   danger: 'border-rose-500/20 bg-rose-500/10 text-rose-300',
 };
 
+const alertToneClass = {
+  danger: 'border-rose-500/25 bg-rose-500/10 text-rose-200',
+  warning: 'border-amber-500/25 bg-amber-500/10 text-amber-200',
+  info: 'border-blue-500/25 bg-blue-500/10 text-blue-200',
+};
+
 export const Dashboard = () => {
-  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction, user, portfolioValue } = useFinance();
+  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction, portfolioValue, activeAlerts, dismissAlert } = useFinance();
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const currentMonthKey = useMemo(() => getMonthKey(), []);
   const trendChart = useChartSize();
@@ -99,6 +105,8 @@ export const Dashboard = () => {
     return days;
   }, [transactions]);
 
+  const priorityAlerts = useMemo(() => activeAlerts.slice(0, 3), [activeAlerts]);
+
   return (
     <div className="space-y-6">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
@@ -112,6 +120,42 @@ export const Dashboard = () => {
           </Button>
         </div>
       </header>
+
+      {priorityAlerts.length > 0 && (
+        <Card className="p-5 border-amber-500/20 bg-amber-500/[0.03]">
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-300 flex items-center justify-center">
+                <BellRing size={20} />
+              </div>
+              <div>
+                <h2 className="text-sm font-black text-[color:var(--text-primary)]">Smart Alerts</h2>
+                <p className="text-xs text-[color:var(--text-secondary)] mt-0.5">เรื่องที่ระบบเห็นว่าควรจัดการก่อนในวันนี้</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {priorityAlerts.map((alert) => (
+              <div key={alert.id} className={`rounded-xl border p-4 ${alertToneClass[alert.severity] || alertToneClass.info}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <h3 className="text-xs font-black text-[color:var(--text-primary)]">{alert.title}</h3>
+                    <p className="text-[11px] leading-relaxed text-[color:var(--text-secondary)] mt-1">{alert.message}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => dismissAlert(alert.id)}
+                    className="p-1 rounded-lg text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)] hover:bg-white/5 transition-colors shrink-0"
+                    aria-label="ซ่อน alert"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card className="p-6 relative overflow-hidden group border-blue-500/25 bg-blue-500/[0.02]">

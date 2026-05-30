@@ -1,16 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Undo2 } from 'lucide-react';
-
-let toastId = 0;
-let listeners = [];
-
-export const toast = {
-  show({ message, type = 'info', duration = 4000, onUndo }) {
-    const id = ++toastId;
-    listeners.forEach(fn => fn({ id, message, type, duration, onUndo }));
-    return id;
-  },
-};
+import { addToastListener } from './toastStore';
 
 export const ToastContainer = () => {
   const [toasts, setToasts] = useState([]);
@@ -24,8 +14,7 @@ export const ToastContainer = () => {
         }, t.duration);
       }
     };
-    listeners.push(handler);
-    return () => { listeners = listeners.filter(l => l !== handler); };
+    return addToastListener(handler);
   }, []);
 
   const remove = useCallback((id) => {

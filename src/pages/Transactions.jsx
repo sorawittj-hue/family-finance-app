@@ -8,7 +8,7 @@ import { TransactionModal } from '../components/TransactionModal';
 import { format, parseISO } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { getMonthKey } from '../utils/financeAnalytics';
-import { toast } from '../components/ui/Toast';
+import { toast } from '../components/ui/toastStore';
 
 export const Transactions = () => {
   const { transactions, wallets, deleteTransaction, addTransaction, currency } = useFinance();

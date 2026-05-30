@@ -490,7 +490,7 @@ export const Portfolio = () => {
     if (stats && stats.totalValue !== undefined) {
       setPortfolioValue(stats.totalValue);
     }
-  }, [stats.totalValue, setPortfolioValue]);
+  }, [stats, setPortfolioValue]);
   
   const allocation = useMemo(() => calculateAllocation(stats.holdings), [stats.holdings]);
 

@@ -8,7 +8,7 @@ import {
   Smartphone, Eye, EyeOff, Sparkles, Printer, FileSpreadsheet, 
   Trash2, Plus, Edit2, Database, AlertTriangle, X,
   Clock, Landmark, CreditCard, Cpu, Info,
-  Cloud, LogIn, UserPlus, LogOut, RefreshCw
+  Cloud, LogIn, UserPlus, LogOut, RefreshCw, BellRing
 } from 'lucide-react';
 
 const DEFAULT_WALLETS = [
@@ -49,7 +49,12 @@ export const Settings = () => {
     signUp,
     logout,
     syncLocalDataToCloud,
-    refreshFromCloud
+    refreshFromCloud,
+    alertSettings,
+    updateAlertSettings,
+    activeAlerts,
+    unreadAlertCount,
+    requestBrowserNotificationPermission
   } = useFinance();
   
   const fileInputRef = useRef(null);
@@ -232,6 +237,24 @@ export const Settings = () => {
     }
     setDemoLoaded(true);
     setTimeout(() => setDemoLoaded(false), 3000);
+  };
+
+  const handleAlertNumberChange = (key, value) => {
+    const nextValue = Number(value);
+    if (!Number.isFinite(nextValue) || nextValue < 0) return;
+    updateAlertSettings({ [key]: nextValue });
+  };
+
+  const handleBrowserNotificationClick = async () => {
+    if (alertSettings.browserNotificationsEnabled) {
+      updateAlertSettings({ browserNotificationsEnabled: false });
+      return;
+    }
+    const result = await requestBrowserNotificationPermission();
+    if (!result.success) {
+      setSyncStatusMsg({ type: 'error', text: result.error || 'ไม่สามารถเปิดการแจ้งเตือนของเบราว์เซอร์ได้' });
+      setTimeout(() => setSyncStatusMsg(null), 4000);
+    }
   };
 
   const handleReset = async () => {
@@ -566,6 +589,127 @@ export const Settings = () => {
           </div>
         </Card>
       </div>
+
+      <Card className="p-6">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-amber-500/20 text-amber-300 flex items-center justify-center">
+              <BellRing size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[color:var(--text-primary)]">Smart Alerts และ Proactive AI</h3>
+              <p className="text-xs text-[color:var(--text-secondary)]">
+                มี alert ใช้งานอยู่ {activeAlerts.length} รายการ และยังไม่ได้อ่าน {unreadAlertCount} รายการ
+              </p>
+            </div>
+          </div>
+          <label className="inline-flex items-center gap-2 text-xs font-bold text-[color:var(--text-secondary)]">
+            <input
+              type="checkbox"
+              checked={alertSettings.enabled}
+              onChange={(e) => updateAlertSettings({ enabled: e.target.checked })}
+              className="h-4 w-4 accent-blue-500"
+            />
+            เปิด Smart Alerts
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">เตือนงบใกล้เต็ม (%)</span>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={alertSettings.budgetWarningPercent}
+              onChange={(e) => handleAlertNumberChange('budgetWarningPercent', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">เงินสดขั้นต่ำ</span>
+            <input
+              type="number"
+              min="0"
+              value={alertSettings.cashLowAmount}
+              onChange={(e) => handleAlertNumberChange('cashLowAmount', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">เตือนบิลล่วงหน้า (วัน)</span>
+            <input
+              type="number"
+              min="0"
+              max="30"
+              value={alertSettings.billDueDays}
+              onChange={(e) => handleAlertNumberChange('billDueDays', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">รายจ่ายก้อนใหญ่</span>
+            <input
+              type="number"
+              min="0"
+              value={alertSettings.largeExpenseAmount}
+              onChange={(e) => handleAlertNumberChange('largeExpenseAmount', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">รายจ่ายโตเกิน (%)</span>
+            <input
+              type="number"
+              min="0"
+              max="500"
+              value={alertSettings.expenseGrowthPercent}
+              onChange={(e) => handleAlertNumberChange('expenseGrowthPercent', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+          <label className="space-y-1.5">
+            <span className="block text-[10px] font-bold text-[color:var(--text-muted)] uppercase">Health Score ขั้นต่ำ</span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={alertSettings.healthScoreWarning}
+              onChange={(e) => handleAlertNumberChange('healthScoreWarning', e.target.value)}
+              className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-amber-500"
+            />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-5">
+          <label className="flex items-center justify-between gap-3 rounded-xl border border-[color:var(--border-color)] bg-[color:var(--bg-secondary)] p-4">
+            <div>
+              <span className="block text-sm font-bold text-[color:var(--text-primary)]">Proactive AI Brief</span>
+              <span className="block text-[11px] text-[color:var(--text-secondary)] mt-1">ให้ AI เสนอปุ่มสรุปเมื่อมี alert สำคัญ</span>
+            </div>
+            <input
+              type="checkbox"
+              checked={alertSettings.proactiveAiEnabled}
+              onChange={(e) => updateAlertSettings({ proactiveAiEnabled: e.target.checked })}
+              className="h-4 w-4 accent-blue-500"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleBrowserNotificationClick}
+            className={`rounded-xl border p-4 text-left transition-all ${
+              alertSettings.browserNotificationsEnabled
+                ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200'
+                : 'border-[color:var(--border-color)] bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]'
+            }`}
+          >
+            <span className="block text-sm font-bold">Browser Notifications</span>
+            <span className="block text-[11px] mt-1">
+              {alertSettings.browserNotificationsEnabled ? 'เปิดอยู่สำหรับ alert เร่งด่วน' : 'กดเพื่อขอสิทธิ์แจ้งเตือนจากเบราว์เซอร์'}
+            </span>
+          </button>
+        </div>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Mimo AI Settings Card */}

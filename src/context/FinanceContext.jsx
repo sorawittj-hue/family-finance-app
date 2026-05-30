@@ -1,21 +1,7 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { generateDemoData } from '../utils/demoData';
 import { supabase, supabaseAvailable } from '../utils/supabaseClient';
-
-const DEVICE_ID_KEY = 'family_finance_device_id';
-
-const getOrCreateDeviceId = () => {
-  try {
-    let id = localStorage.getItem(DEVICE_ID_KEY);
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(DEVICE_ID_KEY, id);
-    }
-    return id;
-  } catch {
-    return `dev-${Date.now()}`;
-  }
-};
+import { buildSmartAlerts, DEFAULT_ALERT_SETTINGS } from '../utils/smartAlerts';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -40,6 +26,10 @@ const STORAGE_KEYS = {
   RECURRING: 'family_finance_recurring',
   MIMO_API_KEY: 'family_finance_mimo_api_key',
   MIMO_MODEL: 'family_finance_mimo_model',
+  ALERT_SETTINGS: 'family_finance_alert_settings',
+  DISMISSED_ALERTS: 'family_finance_dismissed_alerts',
+  READ_ALERTS: 'family_finance_read_alerts',
+  NOTIFIED_ALERTS: 'family_finance_notified_alerts',
 };
 
 const DEFAULT_WALLETS = [
@@ -252,6 +242,14 @@ export const FinanceProvider = ({ children }) => {
       return 'mimo-v2.5-pro';
     }
   });
+
+  const [alertSettings, setAlertSettingsState] = useState(() => {
+    const stored = loadData(STORAGE_KEYS.ALERT_SETTINGS, DEFAULT_ALERT_SETTINGS, null);
+    return { ...DEFAULT_ALERT_SETTINGS, ...stored };
+  });
+  const [dismissedAlertIds, setDismissedAlertIds] = useState(() => loadData(STORAGE_KEYS.DISMISSED_ALERTS, [], null));
+  const [readAlertIds, setReadAlertIds] = useState(() => loadData(STORAGE_KEYS.READ_ALERTS, [], null));
+  const [notifiedAlertIds, setNotifiedAlertIds] = useState(() => loadData(STORAGE_KEYS.NOTIFIED_ALERTS, [], null));
 
   // Transactions (Make sure they have walletId, migrate if missing)
   const [transactions, setTransactions] = useState(() => {
@@ -509,6 +507,22 @@ export const FinanceProvider = ({ children }) => {
       console.error('Failed to save Mimo Model', e);
     }
   }, [mimoModel]);
+
+  useEffect(() => {
+    persistData(STORAGE_KEYS.ALERT_SETTINGS, alertSettings, null);
+  }, [alertSettings]);
+
+  useEffect(() => {
+    persistData(STORAGE_KEYS.DISMISSED_ALERTS, dismissedAlertIds.slice(-100), null);
+  }, [dismissedAlertIds]);
+
+  useEffect(() => {
+    persistData(STORAGE_KEYS.READ_ALERTS, readAlertIds.slice(-100), null);
+  }, [readAlertIds]);
+
+  useEffect(() => {
+    persistData(STORAGE_KEYS.NOTIFIED_ALERTS, notifiedAlertIds.slice(-100), null);
+  }, [notifiedAlertIds]);
 
   // Apply Theme class to document root
   useEffect(() => {
@@ -1452,6 +1466,96 @@ export const FinanceProvider = ({ children }) => {
     }
   };
 
+  const smartAlerts = useMemo(() => buildSmartAlerts({
+    transactions,
+    wallets,
+    budgets,
+    recurringTxs,
+    portfolioValue,
+    settings: alertSettings,
+  }), [alertSettings, budgets, portfolioValue, recurringTxs, transactions, wallets]);
+
+  const dismissedAlertSet = useMemo(() => new Set(dismissedAlertIds), [dismissedAlertIds]);
+  const readAlertSet = useMemo(() => new Set(readAlertIds), [readAlertIds]);
+  const activeAlerts = useMemo(() => (
+    smartAlerts.filter((alert) => !dismissedAlertSet.has(alert.id))
+  ), [dismissedAlertSet, smartAlerts]);
+  const unreadAlertCount = useMemo(() => (
+    activeAlerts.filter((alert) => !readAlertSet.has(alert.id)).length
+  ), [activeAlerts, readAlertSet]);
+
+  const updateAlertSettings = useCallback((updates) => {
+    setAlertSettingsState((prev) => ({
+      ...prev,
+      ...updates,
+    }));
+  }, []);
+
+  const dismissAlert = useCallback((alertId) => {
+    if (!alertId) return;
+    setDismissedAlertIds((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
+    setReadAlertIds((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
+  }, []);
+
+  const markAlertRead = useCallback((alertId) => {
+    if (!alertId) return;
+    setReadAlertIds((prev) => (prev.includes(alertId) ? prev : [...prev, alertId]));
+  }, []);
+
+  const markAllAlertsRead = useCallback(() => {
+    setReadAlertIds((prev) => {
+      const next = new Set(prev);
+      activeAlerts.forEach((alert) => next.add(alert.id));
+      return Array.from(next);
+    });
+  }, [activeAlerts]);
+
+  const requestBrowserNotificationPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return { success: false, error: 'เบราว์เซอร์นี้ไม่รองรับการแจ้งเตือน' };
+    }
+    try {
+      const permission = await window.Notification.requestPermission();
+      const success = permission === 'granted';
+      updateAlertSettings({ browserNotificationsEnabled: success });
+      return success
+        ? { success: true }
+        : { success: false, error: 'ผู้ใช้ยังไม่ได้อนุญาตการแจ้งเตือน' };
+    } catch (error) {
+      console.error('Failed to request browser notification permission.', error);
+      return { success: false, error: error.message || 'ไม่สามารถขอสิทธิ์แจ้งเตือนได้' };
+    }
+  }, [updateAlertSettings]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined'
+      || !alertSettings.browserNotificationsEnabled
+      || !('Notification' in window)
+      || window.Notification.permission !== 'granted'
+    ) {
+      return;
+    }
+
+    const priorityAlert = activeAlerts.find((alert) => ['danger', 'warning'].includes(alert.severity));
+    if (!priorityAlert || notifiedAlertIds.includes(priorityAlert.id)) return;
+
+    try {
+      const notification = new window.Notification(`Money Nitro: ${priorityAlert.title}`, {
+        body: priorityAlert.message,
+        tag: priorityAlert.id,
+        icon: '/icon.png',
+      });
+      notification.onclick = () => {
+        window.focus();
+        markAlertRead(priorityAlert.id);
+      };
+      setNotifiedAlertIds((prev) => (prev.includes(priorityAlert.id) ? prev : [...prev, priorityAlert.id]));
+    } catch (error) {
+      console.warn('Browser notification failed.', error);
+    }
+  }, [activeAlerts, alertSettings.browserNotificationsEnabled, markAlertRead, notifiedAlertIds]);
+
   const value = {
     transactions,
     addTransaction,
@@ -1498,7 +1602,16 @@ export const FinanceProvider = ({ children }) => {
     syncLocalDataToCloud,
     refreshFromCloud,
     portfolioValue,
-    setPortfolioValue
+    setPortfolioValue,
+    alertSettings,
+    updateAlertSettings,
+    smartAlerts,
+    activeAlerts,
+    unreadAlertCount,
+    dismissAlert,
+    markAlertRead,
+    markAllAlertsRead,
+    requestBrowserNotificationPermission
   };
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

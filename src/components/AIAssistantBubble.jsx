@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { 
   Sparkles, X, Send, Brain, ArrowRightLeft, 
@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { CATEGORIES, getCategory, formatMoney } from '../utils/constants';
 import { buildWealthOperatingSystem, getMonthKey } from '../utils/financeAnalytics';
+import { buildAlertBriefText } from '../utils/smartAlerts';
 
 export const AIAssistantBubble = () => {
   const { 
@@ -19,7 +20,9 @@ export const AIAssistantBubble = () => {
     recurringTxs,
     addTransaction,
     transferWallet,
-    currency
+    currency,
+    activeAlerts,
+    alertSettings
   } = useFinance();
 
   const [isOpen, setIsOpen] = useState(false);
@@ -51,12 +54,19 @@ export const AIAssistantBubble = () => {
   }, [mimoApiKey]);
 
   // Quick Action Chips
-  const SUGGESTION_CHIPS = [
-    { label: '🍔 กินข้าว 60 บาท', text: 'กินข้าวไป 60 บาท' },
-    { label: '💰 เงินปันผลเข้า 1,200', text: 'ได้รับเงินปันผล 1,200 บาท' },
-    { label: '🔄 โอนเงินสดเข้าธนาคาร 500', text: 'โอนเงินสดเข้าบัญชีธนาคาร 500 บาท' },
-    { label: '📊 ขอวิธีออมเงินรายเดือน', text: 'ช่วยแนะนำแนวทางการออมเงินเดือนนี้ให้หน่อยครับ' }
-  ];
+  const suggestionChips = useMemo(() => {
+    const defaultChips = [
+      { label: 'กินข้าว 60 บาท', text: 'กินข้าวไป 60 บาท' },
+      { label: 'เงินปันผลเข้า 1,200', text: 'ได้รับเงินปันผล 1,200 บาท' },
+      { label: 'โอนเงินสดเข้าธนาคาร 500', text: 'โอนเงินสดเข้าบัญชีธนาคาร 500 บาท' },
+      { label: 'ขอวิธีออมเงินรายเดือน', text: 'ช่วยแนะนำแนวทางการออมเงินเดือนนี้ให้หน่อยครับ' }
+    ];
+    if (!alertSettings.proactiveAiEnabled || activeAlerts.length === 0) return defaultChips;
+    return [
+      { label: 'สรุป alert วันนี้', text: buildAlertBriefText(activeAlerts) },
+      ...defaultChips,
+    ];
+  }, [activeAlerts, alertSettings.proactiveAiEnabled]);
 
   const handleSaveApiKey = (e) => {
     e.preventDefault();
@@ -125,6 +135,9 @@ export const AIAssistantBubble = () => {
       const wealthPlaybookStr = wealthSystem.playbook
         .map((item) => `- ${item.title}: ${item.detail}`)
         .join('\n');
+      const alertContextStr = activeAlerts.slice(0, 5)
+        .map((alert) => `- [${alert.severity}] ${alert.title}: ${alert.message}`)
+        .join('\n') || '- No active smart alerts';
 
       const systemPrompt = `You are an expert AI Financial Assistant for a family finance app called "Money Nitro".
 The user will input financial actions in natural language (mostly in Thai).
@@ -148,6 +161,8 @@ ${walletsStr}
   - Annualized wealth velocity: ${wealthSystem.annualizedWealthVelocity} ${currency}
 - Recommended action plan:
 ${wealthPlaybookStr}
+- Active Smart Alerts:
+${alertContextStr}
 - Recent Transactions (up to 10):
 ${recentTxsStr}
 
@@ -247,27 +262,30 @@ JSON Schema:
     }
   };
 
-  const handleConfirmAction = (msgId) => {
+  const handleConfirmAction = async (msgId) => {
+    const targetMessage = messages.find((msg) => msg.id === msgId);
+    if (!targetMessage) return;
+
+    let success = false;
+    if (targetMessage.action === 'add_transaction' && targetMessage.transaction) {
+      success = await addTransaction(targetMessage.transaction);
+    } else if (targetMessage.action === 'transfer' && targetMessage.transfer) {
+      success = await transferWallet(targetMessage.transfer);
+    }
+
     setMessages(prev => prev.map(msg => {
-      if (msg.id === msgId) {
-        if (msg.action === 'add_transaction' && msg.transaction) {
-          const success = addTransaction(msg.transaction);
-          return { 
-            ...msg, 
-            status: success ? 'confirmed' : 'failed', 
-            content: success ? `${msg.content} (บันทึกข้อมูลเรียบร้อยแล้ว)` : 'ไม่สามารถบันทึกธุรกรรมได้ เนื่องจากข้อมูลไม่สมบูรณ์'
-          };
-        }
-        if (msg.action === 'transfer' && msg.transfer) {
-          const success = transferWallet(msg.transfer);
-          return { 
-            ...msg, 
-            status: success ? 'confirmed' : 'failed', 
-            content: success ? `${msg.content} (โอนเงินระหว่างกระเป๋าสำเร็จ)` : 'ไม่สามารถโอนเงินได้ เนื่องจากข้อมูลกระเป๋าเงินไม่ถูกต้อง'
-          };
-        }
-      }
-      return msg;
+      if (msg.id !== msgId) return msg;
+      const successText = msg.action === 'transfer'
+        ? `${msg.content} (โอนเงินระหว่างกระเป๋าสำเร็จ)`
+        : `${msg.content} (บันทึกข้อมูลเรียบร้อยแล้ว)`;
+      const failedText = msg.action === 'transfer'
+        ? 'ไม่สามารถโอนเงินได้ เนื่องจากข้อมูลกระเป๋าเงินไม่ถูกต้อง'
+        : 'ไม่สามารถบันทึกธุรกรรมได้ เนื่องจากข้อมูลไม่สมบูรณ์';
+      return {
+        ...msg,
+        status: success ? 'confirmed' : 'failed',
+        content: success ? successText : failedText,
+      };
     }));
   };
 
@@ -457,7 +475,7 @@ JSON Schema:
 
           {/* Quick suggestions area */}
           <div className="px-4 py-2 border-t border-[color:var(--border-color)] bg-[color:var(--bg-secondary)] overflow-x-auto flex gap-2 no-scrollbar shrink-0 select-none">
-            {SUGGESTION_CHIPS.map((chip, i) => (
+            {suggestionChips.map((chip, i) => (
               <button
                 key={i}
                 type="button"
