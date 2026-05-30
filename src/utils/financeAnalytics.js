@@ -186,3 +186,83 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
     insights: buildInsights({ income, expense, saving, netCashflow, projectedExpense, budgetUsage, debtRatio, runwayMonths }),
   };
 };
+
+export const buildWealthOperatingSystem = ({ transactions, wallets, budgets, goals, recurringTxs, monthKey = getMonthKey() }) => {
+  const report = buildMonthlyFinanceReport({ transactions, wallets, budgets, recurringTxs, monthKey });
+  const monthlyInvesting = transactions
+    .filter((transaction) => transaction.type === 'saving' && transaction.category === 'investment')
+    .reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
+  const emergencyGoal = goals.find((goal) => /emergency|ฉุกเฉิน/i.test(goal.name || '') || goal.id?.includes('emergency'));
+  const emergencyTarget = emergencyGoal?.targetAmount || Math.max(report.expense * 6, 1);
+  const emergencyProgress = emergencyTarget > 0 ? ((emergencyGoal?.currentAmount || 0) / emergencyTarget) * 100 : 0;
+  const recurringExpense = recurringTxs
+    .filter((bill) => bill.type === 'expense')
+    .reduce((sum, bill) => sum + (Number(bill.amount) || 0), 0);
+  const targetSavingRate = report.income >= 50000 ? 25 : 15;
+  const currentSavingGap = report.income > 0
+    ? Math.max(0, (report.income * targetSavingRate / 100) - report.saving)
+    : 0;
+  const investableSurplus = Math.max(0, report.netCashflow - currentSavingGap);
+  const annualizedWealthVelocity = (report.saving + investableSurplus) * 12;
+  const runwayTarget = 6;
+  const runwayGap = Math.max(0, (report.expense * runwayTarget) - report.totalBalance);
+
+  const budgetLeaks = report.budgetUsage
+    .filter((budget) => budget.status !== 'ok')
+    .slice(0, 3)
+    .map((budget) => ({
+      title: `${budget.label} ต้องคุมให้ชัด`,
+      detail: budget.remaining < 0
+        ? `เกินงบไปแล้ว ${Math.abs(budget.remaining).toFixed(0)} เดือนนี้ให้หยุดรายจ่ายไม่จำเป็นในหมวดนี้ก่อน`
+        : `ใช้ไป ${budget.progress.toFixed(0)}% ของงบแล้ว รายจ่ายถัดไปควรรอ 24 ชั่วโมงก่อนตัดสินใจ`,
+      impact: Math.max(Math.abs(budget.remaining), budget.limit * 0.1),
+    }));
+
+  const playbook = [
+    {
+      title: 'จ่ายให้อนาคตก่อน',
+      metric: `เป้าออม ${targetSavingRate}%`,
+      detail: currentSavingGap > 0
+        ? `กันเงินเพิ่มอีก ${currentSavingGap.toFixed(0)} เข้าบัญชีออมก่อนเริ่มใช้จ่ายตามใจ`
+        : 'อัตราออมแตะเป้าแล้ว รักษาระบบอัตโนมัติไว้',
+      tone: currentSavingGap > 0 ? 'warning' : 'success',
+    },
+    {
+      title: 'สร้าง runway 6 เดือน',
+      metric: `พร้อม ${report.runwayMonths.toFixed(1)} เดือน`,
+      detail: runwayGap > 0
+        ? `ยังขาดเงินสำรอง ${runwayGap.toFixed(0)} ก่อนรับความเสี่ยงลงทุนหนักขึ้น`
+        : 'เงินสำรองแข็งแรงพอสำหรับการเพิ่มสัดส่วนลงทุน',
+      tone: runwayGap > 0 ? 'warning' : 'success',
+    },
+    {
+      title: 'ลดรายจ่ายประจำที่ไม่สร้างผลลัพธ์',
+      metric: `${recurringExpense.toFixed(0)} ต่อเดือน`,
+      detail: recurringExpense > report.income * 0.1
+        ? 'รายจ่ายประจำเกิน 10% ของรายรับ ควรรีวิว subscription ทั้งหมดในสัปดาห์นี้'
+        : 'รายจ่ายประจำยังอยู่ในกรอบ เหลือแค่ต้องติดตามสม่ำเสมอ',
+      tone: recurringExpense > report.income * 0.1 ? 'danger' : 'success',
+    },
+    {
+      title: 'เพิ่ม wealth velocity',
+      metric: `${annualizedWealthVelocity.toFixed(0)} ต่อปี`,
+      detail: monthlyInvesting > 0
+        ? 'มีนิสัยลงทุนแล้ว เพิ่มได้เมื่อ cashflow และเงินสำรองนิ่ง'
+        : 'เดือนนี้ยังไม่มีเงินลงทุน ลองเริ่ม DCA เล็ก ๆ ให้ต่อเนื่อง',
+      tone: monthlyInvesting > 0 ? 'success' : 'warning',
+    },
+  ];
+
+  return {
+    report,
+    emergencyProgress: Math.min(100, emergencyProgress),
+    monthlyInvesting,
+    recurringExpense,
+    currentSavingGap,
+    investableSurplus,
+    annualizedWealthVelocity,
+    runwayGap,
+    budgetLeaks,
+    playbook,
+  };
+};

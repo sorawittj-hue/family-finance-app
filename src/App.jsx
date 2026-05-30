@@ -9,6 +9,7 @@ const Transactions = lazy(() => import('./pages/Transactions').then((module) => 
 const Budgets = lazy(() => import('./pages/Budgets').then((module) => ({ default: module.Budgets })));
 const Goals = lazy(() => import('./pages/Goals').then((module) => ({ default: module.Goals })));
 const Reports = lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports })));
+const WealthCoach = lazy(() => import('./pages/WealthCoach').then((module) => ({ default: module.WealthCoach })));
 const Settings = lazy(() => import('./pages/Settings').then((module) => ({ default: module.Settings })));
 
 const PageLoader = () => (
@@ -30,6 +31,7 @@ export default function App() {
                 <Route path="budgets" element={<Budgets />} />
                 <Route path="goals" element={<Goals />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="wealth" element={<WealthCoach />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>

@@ -5,6 +5,7 @@ import {
   CheckCircle, AlertCircle, PlusCircle, Info
 } from 'lucide-react';
 import { CATEGORIES, getCategory, formatMoney } from '../utils/constants';
+import { buildWealthOperatingSystem, getMonthKey } from '../utils/financeAnalytics';
 
 export const AIAssistantBubble = () => {
   const { 
@@ -13,6 +14,9 @@ export const AIAssistantBubble = () => {
     mimoModel, 
     wallets, 
     transactions,
+    budgets,
+    goals,
+    recurringTxs,
     addTransaction,
     transferWallet,
     currency
@@ -110,6 +114,17 @@ export const AIAssistantBubble = () => {
       const incomeCategoriesStr = CATEGORIES.income.map(c => `- ID: "${c.id}", ชื่อหมวดหมู่: "${c.label}"`).join('\n');
       const expenseCategoriesStr = CATEGORIES.expense.map(c => `- ID: "${c.id}", ชื่อหมวดหมู่: "${c.label}"`).join('\n');
       const savingCategoriesStr = CATEGORIES.saving.map(c => `- ID: "${c.id}", ชื่อหมวดหมู่: "${c.label}"`).join('\n');
+      const wealthSystem = buildWealthOperatingSystem({
+        transactions,
+        wallets,
+        budgets,
+        goals,
+        recurringTxs,
+        monthKey: getMonthKey(),
+      });
+      const wealthPlaybookStr = wealthSystem.playbook
+        .map((item) => `- ${item.title}: ${item.detail}`)
+        .join('\n');
 
       const systemPrompt = `You are an expert AI Financial Assistant for a family finance app called "Money Nitro".
 The user will input financial actions in natural language (mostly in Thai).
@@ -120,6 +135,19 @@ Current account status:
 - Net Balance: ${totalBalance} ${currency}
 - Active Wallets:
 ${walletsStr}
+- Wealth Coach snapshot:
+  - Health Score: ${wealthSystem.report.healthScore}/100
+  - Monthly income: ${wealthSystem.report.income} ${currency}
+  - Monthly expense: ${wealthSystem.report.expense} ${currency}
+  - Monthly saving: ${wealthSystem.report.saving} ${currency}
+  - Net cashflow: ${wealthSystem.report.netCashflow} ${currency}
+  - Saving gap to target: ${wealthSystem.currentSavingGap} ${currency}
+  - Emergency runway: ${wealthSystem.report.runwayMonths.toFixed(1)} months
+  - Runway gap to 6 months: ${wealthSystem.runwayGap} ${currency}
+  - Recurring expense drag: ${wealthSystem.recurringExpense} ${currency}
+  - Annualized wealth velocity: ${wealthSystem.annualizedWealthVelocity} ${currency}
+- Recommended action plan:
+${wealthPlaybookStr}
 - Recent Transactions (up to 10):
 ${recentTxsStr}
 

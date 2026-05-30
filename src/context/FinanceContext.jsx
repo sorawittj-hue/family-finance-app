@@ -592,14 +592,14 @@ export const FinanceProvider = ({ children }) => {
   useEffect(() => {
     if (!user) return;
     const POLL_INTERVAL = 30_000; // 30 seconds
-    const interval = setInterval(async () => {
+    const interval = window.setInterval(async () => {
       try {
         await fetchCloudData(user.id);
       } catch (err) {
         console.warn('[Polling] fetchCloudData error:', err);
       }
     }, POLL_INTERVAL);
-    return () => clearInterval(interval);
+    return () => window.clearInterval(interval);
   }, [user, fetchCloudData]);
 
   // --- Visibility: refresh ทันทีเมื่อผู้ใช้กลับมาที่ tab/แอพ ---
