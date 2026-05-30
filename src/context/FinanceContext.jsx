@@ -265,12 +265,11 @@ export const FinanceProvider = ({ children }) => {
     if (!userId) return;
     try {
       const [dbWalletsRes, dbTxsRes, dbBudgetsRes, dbGoalsRes, dbRecurringRes] = await Promise.all([
-        supabase.from('wallets').select('*').eq('user_id', userId),
-        supabase.from('transactions').select('*').eq('user_id', userId),
-        supabase.from('budgets').select('*').eq('user_id', userId),
-        supabase.from('goals').select('*').eq('user_id', userId),
-        supabase.from('recurring_txs').select('*').eq('user_id', userId)
-      ]);
+        supabase.from('wallets').select('*'),
+        supabase.from('transactions').select('*'),
+        supabase.from('budgets').select('*'),
+        supabase.from('goals').select('*'),
+        supabase.from('recurring_txs').select('*')]);
 
       if (dbWalletsRes.error) throw dbWalletsRes.error;
       if (dbTxsRes.error) throw dbTxsRes.error;
@@ -514,7 +513,7 @@ export const FinanceProvider = ({ children }) => {
 
     try {
     channel = supabase
-      .channel(`sync-changes-${user.id}`)
+      .channel('sync-changes-shared')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'wallets' },
@@ -663,7 +662,7 @@ export const FinanceProvider = ({ children }) => {
     if (!user) return { success: false, error: 'ไม่ได้เชื่อมต่อ' };
     setSyncing(true);
     try {
-      await fetchCloudData(user.id);
+      await fetchCloudData('shared');
       return { success: true };
     } catch (err) {
       return { success: false, error: err.message };
@@ -678,7 +677,7 @@ export const FinanceProvider = ({ children }) => {
     const POLL_INTERVAL = 30_000; // 30 seconds
     const interval = window.setInterval(async () => {
       try {
-        await fetchCloudData(user.id);
+        await fetchCloudData('shared');
       } catch (err) {
         console.warn('[Polling] fetchCloudData error:', err);
       }
@@ -693,7 +692,7 @@ export const FinanceProvider = ({ children }) => {
       if (document.visibilityState === 'visible') {
         console.log('[Sync] Tab visible — refreshing from cloud...');
         try {
-          await fetchCloudData(user.id);
+          await fetchCloudData('shared');
         } catch (err) {
           console.warn('[Sync] visibilitychange fetch error:', err);
         }
@@ -717,11 +716,10 @@ export const FinanceProvider = ({ children }) => {
       const offlineRecurring = loadData(STORAGE_KEYS.RECURRING, [], null);
 
       const [dbWalletsRes, dbTxsRes, dbGoalsRes, dbRecurringRes] = await Promise.all([
-        supabase.from('wallets').select('id').eq('user_id', user.id),
-        supabase.from('transactions').select('id').eq('user_id', user.id),
-        supabase.from('goals').select('id').eq('user_id', user.id),
-        supabase.from('recurring_txs').select('id').eq('user_id', user.id)
-      ]);
+        supabase.from('wallets').select('id'),
+        supabase.from('transactions').select('id'),
+        supabase.from('goals').select('id'),
+        supabase.from('recurring_txs').select('id')]);
 
       const dbWalletIds = new Set((dbWalletsRes.data || []).map(w => w.id));
       const dbTxIds = new Set((dbTxsRes.data || []).map(t => t.id));
@@ -730,25 +728,25 @@ export const FinanceProvider = ({ children }) => {
 
       const walletsToInsert = offlineWallets
         .filter(w => !dbWalletIds.has(w.id))
-        .map(w => mapWalletToDb(w, user.id));
+        .map(w => mapWalletToDb(w, 'shared'));
 
       const txsToInsert = offlineTxs
         .filter(t => !dbTxIds.has(t.id))
-        .map(t => mapTxToDb(t, user.id));
+        .map(t => mapTxToDb(t, 'shared'));
 
       const budgetsToUpsert = Object.entries(offlineBudgets).map(([catId, amount]) => ({
-        user_id: user.id,
+        user_id: 'shared',
         category_id: catId,
         amount: Number(amount)
       }));
 
       const goalsToInsert = offlineGoals
         .filter(g => !dbGoalIds.has(g.id))
-        .map(g => mapGoalToDb(g, user.id));
+        .map(g => mapGoalToDb(g, 'shared'));
 
       const recurringToInsert = offlineRecurring
         .filter(r => !dbRecurringIds.has(r.id))
-        .map(r => mapRecurringToDb(r, user.id));
+        .map(r => mapRecurringToDb(r, 'shared'));
 
       if (walletsToInsert.length > 0) {
         const { error } = await supabase.from('wallets').insert(walletsToInsert);
@@ -771,7 +769,7 @@ export const FinanceProvider = ({ children }) => {
         if (error) throw error;
       }
 
-      await fetchCloudData(user.id);
+      await fetchCloudData('shared');
 
       localStorage.removeItem(STORAGE_KEYS.WALLETS);
       localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
@@ -845,7 +843,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('transactions')
-          .insert(mapTxToDb(newTx, user.id));
+          .insert(mapTxToDb(newTx, 'shared'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add transaction to cloud failed:', err.message);
@@ -872,7 +870,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('transactions')
           .delete()
-          .eq('user_id', user.id)
           .in('id', idsToDelete);
         if (error) throw error;
       } catch (err) {
@@ -908,8 +905,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('transactions')
-          .update(mapTxToDb(mergedTx, user.id))
-          .eq('user_id', user.id)
+          .update(mapTxToDb(mergedTx, 'shared'))
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -967,8 +963,8 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('transactions')
           .insert([
-            mapTxToDb(outTx, user.id),
-            mapTxToDb(inTx, user.id)
+            mapTxToDb(outTx, 'shared'),
+            mapTxToDb(inTx, 'shared')
           ]);
         if (error) throw error;
       } catch (err) {
@@ -998,7 +994,7 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('budgets')
           .upsert({
-            user_id: user.id,
+            user_id: 'shared',
             category_id: categoryId,
             amount: Number(amount)
           }, { onConflict: 'user_id,category_id' });
@@ -1023,7 +1019,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('budgets')
           .delete()
-          .eq('user_id', user.id)
           .eq('category_id', categoryId);
         if (error) throw error;
       } catch (err) {
@@ -1056,8 +1051,8 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('budgets')
           .upsert([
-            { user_id: user.id, category_id: fromCatId, amount: nextFromAmount },
-            { user_id: user.id, category_id: toCatId, amount: nextToAmount }
+            { user_id: 'shared', category_id: fromCatId, amount: nextFromAmount },
+            { user_id: 'shared', category_id: toCatId, amount: nextToAmount }
           ], { onConflict: 'user_id,category_id' });
         if (error) throw error;
       } catch (err) {
@@ -1087,7 +1082,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('goals')
-          .insert(mapGoalToDb(newGoal, user.id));
+          .insert(mapGoalToDb(newGoal, 'shared'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add goal to cloud failed:', err.message);
@@ -1112,7 +1107,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('goals')
           .update({ current_amount: Number(newAmount) })
-          .eq('user_id', user.id)
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -1130,7 +1124,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('goals')
           .delete()
-          .eq('user_id', user.id)
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -1149,7 +1142,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('wallets')
-          .insert(mapWalletToDb(newWallet, user.id));
+          .insert(mapWalletToDb(newWallet, 'shared'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add wallet to cloud failed:', err.message);
@@ -1173,8 +1166,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('wallets')
-          .update(mapWalletToDb(mergedWallet, user.id))
-          .eq('user_id', user.id)
+          .update(mapWalletToDb(mergedWallet, 'shared'))
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -1195,14 +1187,12 @@ export const FinanceProvider = ({ children }) => {
         const { error: txErr } = await supabase
           .from('transactions')
           .update({ wallet_id: fallbackWalletId })
-          .eq('user_id', user.id)
           .eq('wallet_id', id);
         if (txErr) throw txErr;
 
         const { error: delErr } = await supabase
           .from('wallets')
           .delete()
-          .eq('user_id', user.id)
           .eq('id', id);
         if (delErr) throw delErr;
       } catch (err) {
@@ -1223,7 +1213,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('recurring_txs')
-          .insert(mapRecurringToDb(newRec, user.id));
+          .insert(mapRecurringToDb(newRec, 'shared'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add recurring to cloud failed:', err.message);
@@ -1240,7 +1230,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('recurring_txs')
           .delete()
-          .eq('user_id', user.id)
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -1281,7 +1270,6 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('recurring_txs')
           .update({ last_triggered: todayStr })
-          .eq('user_id', user.id)
           .eq('id', id);
         if (error) throw error;
       } catch (err) {
@@ -1308,23 +1296,22 @@ export const FinanceProvider = ({ children }) => {
     if (user) {
       try {
         const deleteResults = await Promise.all([
-          supabase.from('transactions').delete().eq('user_id', user.id),
-          supabase.from('budgets').delete().eq('user_id', user.id),
-          supabase.from('goals').delete().eq('user_id', user.id),
-          supabase.from('recurring_txs').delete().eq('user_id', user.id),
-          supabase.from('wallets').delete().eq('user_id', user.id)
-        ]);
+          supabase.from('transactions').delete(),
+          supabase.from('budgets').delete(),
+          supabase.from('goals').delete(),
+          supabase.from('recurring_txs').delete(),
+          supabase.from('wallets').delete()]);
         deleteResults.forEach(throwIfSupabaseError);
 
-        const walletsToInsert = demo.wallets.map(w => mapWalletToDb(w, user.id));
-        const txsToInsert = demo.transactions.map(t => mapTxToDb(t, user.id));
+        const walletsToInsert = demo.wallets.map(w => mapWalletToDb(w, 'shared'));
+        const txsToInsert = demo.transactions.map(t => mapTxToDb(t, 'shared'));
         const budgetsToInsert = Object.entries(demo.budgets).map(([catId, amount]) => ({
-          user_id: user.id,
+          user_id: 'shared',
           category_id: catId,
           amount: Number(amount)
         }));
-        const goalsToInsert = demo.goals.map(g => mapGoalToDb(g, user.id));
-        const recurringToInsert = demoRecurring.map(r => mapRecurringToDb(r, user.id));
+        const goalsToInsert = demo.goals.map(g => mapGoalToDb(g, 'shared'));
+        const recurringToInsert = demoRecurring.map(r => mapRecurringToDb(r, 'shared'));
 
         throwIfSupabaseError(await supabase.from('wallets').insert(walletsToInsert));
         if (txsToInsert.length > 0) throwIfSupabaseError(await supabase.from('transactions').insert(txsToInsert));
@@ -1350,15 +1337,14 @@ export const FinanceProvider = ({ children }) => {
     if (user) {
       try {
         const deleteResults = await Promise.all([
-          supabase.from('transactions').delete().eq('user_id', user.id),
-          supabase.from('budgets').delete().eq('user_id', user.id),
-          supabase.from('goals').delete().eq('user_id', user.id),
-          supabase.from('recurring_txs').delete().eq('user_id', user.id),
-          supabase.from('wallets').delete().eq('user_id', user.id)
-        ]);
+          supabase.from('transactions').delete(),
+          supabase.from('budgets').delete(),
+          supabase.from('goals').delete(),
+          supabase.from('recurring_txs').delete(),
+          supabase.from('wallets').delete()]);
         deleteResults.forEach(throwIfSupabaseError);
         
-        const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, user.id));
+        const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, 'shared'));
         throwIfSupabaseError(await supabase.from('wallets').insert(defaultWalletsWithUser));
       } catch (err) {
         console.warn('[Sync] Reset cloud data failed:', err.message);
@@ -1408,23 +1394,22 @@ export const FinanceProvider = ({ children }) => {
       if (user) {
         try {
           const deleteResults = await Promise.all([
-            supabase.from('transactions').delete().eq('user_id', user.id),
-            supabase.from('budgets').delete().eq('user_id', user.id),
-            supabase.from('goals').delete().eq('user_id', user.id),
-            supabase.from('recurring_txs').delete().eq('user_id', user.id),
-            supabase.from('wallets').delete().eq('user_id', user.id)
-          ]);
+            supabase.from('transactions').delete(),
+            supabase.from('budgets').delete(),
+            supabase.from('goals').delete(),
+            supabase.from('recurring_txs').delete(),
+            supabase.from('wallets').delete()]);
           deleteResults.forEach(throwIfSupabaseError);
 
           if (parsed.wallets) {
-            throwIfSupabaseError(await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, user.id))));
+            throwIfSupabaseError(await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, 'shared'))));
           }
           if (parsed.transactions && parsed.transactions.length > 0) {
-            throwIfSupabaseError(await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, user.id))));
+            throwIfSupabaseError(await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, 'shared'))));
           }
           if (parsed.budgets) {
             const budgetsToInsert = Object.entries(parsed.budgets).map(([catId, amount]) => ({
-              user_id: user.id,
+              user_id: 'shared',
               category_id: catId,
               amount: Number(amount)
             }));
@@ -1433,10 +1418,10 @@ export const FinanceProvider = ({ children }) => {
             }
           }
           if (parsed.goals && parsed.goals.length > 0) {
-            throwIfSupabaseError(await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, user.id))));
+            throwIfSupabaseError(await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, 'shared'))));
           }
           if (parsed.recurringTxs && parsed.recurringTxs.length > 0) {
-            throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, user.id))));
+            throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, 'shared'))));
           }
         } catch (err) {
           console.warn('[Sync] Import cloud data failed:', err.message);
