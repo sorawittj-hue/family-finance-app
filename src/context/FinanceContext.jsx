@@ -216,6 +216,23 @@ export const FinanceProvider = ({ children }) => {
     }
   });
 
+  // Portfolio Total Value state (cached for dashboard net worth calculations)
+  const [portfolioValue, setPortfolioValue] = useState(() => {
+    try {
+      return Number(localStorage.getItem('family_finance_portfolio_total_value') || 0);
+    } catch {
+      return 0;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('family_finance_portfolio_total_value', String(portfolioValue));
+    } catch (e) {
+      console.error('Failed to save portfolioValue to localStorage', e);
+    }
+  }, [portfolioValue]);
+
   // Recurring transactions state
   const [recurringTxs, setRecurringTxs] = useState(() => loadData(STORAGE_KEYS.RECURRING, [], null));
 
@@ -1479,7 +1496,9 @@ export const FinanceProvider = ({ children }) => {
     signUp,
     logout,
     syncLocalDataToCloud,
-    refreshFromCloud
+    refreshFromCloud,
+    portfolioValue,
+    setPortfolioValue
   };
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

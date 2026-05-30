@@ -22,7 +22,7 @@ const insightToneClass = {
 };
 
 export const Dashboard = () => {
-  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction, user } = useFinance();
+  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction, user, portfolioValue } = useFinance();
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const currentMonthKey = useMemo(() => getMonthKey(), []);
   const trendChart = useChartSize();
@@ -114,12 +114,24 @@ export const Dashboard = () => {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="p-6 relative overflow-hidden group">
+        <Card className="p-6 relative overflow-hidden group border-blue-500/25 bg-blue-500/[0.02]">
           <div className="relative z-10">
-            <h3 className="text-sm font-semibold text-[color:var(--text-secondary)] mb-1">ยอดเงินคงเหลือรวม</h3>
-            <p className="text-3xl font-black text-[color:var(--text-primary)] tracking-tight">
-              {formatMoney(report.totalBalance, currency)}
+            <h3 className="text-sm font-bold text-[color:var(--text-secondary)] mb-1">สินทรัพย์สุทธิ (Net Worth)</h3>
+            <p className="text-3xl font-black text-blue-400 tracking-tight">
+              {formatMoney(report.totalBalance + portfolioValue, currency)}
             </p>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 pt-3 border-t border-[color:var(--border-color)] text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span className="text-[color:var(--text-muted)]">เงินสด/บัญชี:</span>
+                <span className="font-bold text-[color:var(--text-secondary)]">{formatMoney(report.totalBalance, currency)}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                <span className="text-[color:var(--text-muted)]">พอร์ตลงทุน:</span>
+                <span className="font-bold text-[color:var(--text-secondary)]">{formatMoney(portfolioValue, currency)}</span>
+              </div>
+            </div>
           </div>
           <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500" />
         </Card>
