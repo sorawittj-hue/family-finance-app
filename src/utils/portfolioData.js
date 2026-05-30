@@ -56,12 +56,12 @@ export const loadHoldings = () => {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch (e) {
     console.warn('Failed to load portfolio holdings:', e);
   }
-  return DEFAULT_HOLDINGS;
+  return []; // Return empty array, not DEFAULT_HOLDINGS
 };
 
 // Save holdings to localStorage
