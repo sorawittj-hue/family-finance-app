@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   build: {
     target: 'es2022',
-    minify: false,
-    sourcemap: true,
+    minify: true,
+    sourcemap: false,
   },
 });

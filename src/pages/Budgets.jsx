@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { formatMoney, CATEGORIES, getCategory, CURRENCY_MAP } from '../utils/constants';
 import { Target, PlusCircle, Trash2, AlertTriangle, ArrowRightLeft } from 'lucide-react';
-import { isSameMonth, parseISO } from 'date-fns';
+import { isSameMonth, parseISO, subMonths, addMonths, format } from 'date-fns';
+import { th } from 'date-fns/locale';
 
 export const Budgets = () => {
   const { budgets, updateBudget, deleteBudget, transferBudget, transactions, currency } = useFinance();
@@ -12,8 +13,10 @@ export const Budgets = () => {
   const [newBudget, setNewBudget] = useState({ category: 'food', amount: '' });
   const [transferMode, setTransferMode] = useState(null); // { fromCategoryId: '' }
   const [transferForm, setTransferForm] = useState({ toCategory: '', amount: '' });
+  const [pendingDeleteBudget, setPendingDeleteBudget] = useState(null);
+  const [transferError, setTransferError] = useState('');
 
-  const currentMonth = useMemo(() => new Date(), []);
+  const [viewMonth, setViewMonth] = useState(() => new Date());
 
   // Convert { categoryId: amount } to array and calculate spent amounts
   const budgetProgress = useMemo(() => {
@@ -22,7 +25,7 @@ export const Budgets = () => {
         .filter(t => 
           t.type === 'expense' && 
           t.category === categoryId &&
-          isSameMonth(parseISO(t.date), currentMonth)
+          isSameMonth(parseISO(t.date), viewMonth)
         )
         .reduce((sum, t) => sum + t.amount, 0);
 
@@ -42,7 +45,7 @@ export const Budgets = () => {
         isNearLimit
       };
     }).sort((a, b) => b.progress - a.progress);
-  }, [budgets, transactions, currentMonth]);
+  }, [budgets, transactions, viewMonth]);
 
   const totalBudget = Object.values(budgets).reduce((a, b) => a + b, 0);
   const totalSpent = budgetProgress.reduce((sum, b) => sum + b.spent, 0);
@@ -59,8 +62,13 @@ export const Budgets = () => {
   };
 
   const handleDeleteBudget = (categoryId) => {
-    if (window.confirm('คุณต้องการลบงบประมาณนี้ใช่หรือไม่?')) {
-      deleteBudget(categoryId);
+    setPendingDeleteBudget(categoryId);
+  };
+
+  const confirmDeleteBudget = () => {
+    if (pendingDeleteBudget) {
+      deleteBudget(pendingDeleteBudget);
+      setPendingDeleteBudget(null);
     }
   };
 
@@ -72,9 +80,10 @@ export const Budgets = () => {
     const fromCategoryId = transferMode.fromCategoryId;
     
     if (amt <= 0 || amt > (budgets[fromCategoryId] || 0)) {
-      alert('จำนวนเงินไม่ถูกต้อง หรือเกินงบประมาณที่มีอยู่');
+      setTransferError('จำนวนเงินไม่ถูกต้อง หรือเกินงบประมาณที่มีอยู่');
       return;
     }
+    setTransferError('');
 
     transferBudget(fromCategoryId, transferForm.toCategory, amt);
     setTransferMode(null);
@@ -98,15 +107,23 @@ export const Budgets = () => {
         )}
       </div>
 
+      {/* Month selector */}
+      <div className="flex items-center justify-center gap-4">
+        <button onClick={() => setViewMonth(m => subMonths(m, 1))} className="p-2 rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] transition-colors">←</button>
+        <span className="text-sm font-bold text-[color:var(--text-primary)] min-w-[140px] text-center">{format(viewMonth, 'MMMM yyyy', { locale: th })}</span>
+        <button onClick={() => setViewMonth(m => addMonths(m, 1))} className="p-2 rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] transition-colors">→</button>
+        <button onClick={() => setViewMonth(new Date())} className="px-3 py-2 rounded-xl bg-blue-500/20 border border-blue-500/30 text-blue-300 text-xs font-bold hover:bg-blue-500/30 transition-colors">เดือนนี้</button>
+      </div>
+
       <Card className="p-6 bg-gradient-to-br from-indigo-500/10 to-blue-500/5 border-indigo-500/20">
         <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4 flex items-center gap-2">
           <Target size={20} className="text-indigo-400" />
-          ภาพรวมงบประมาณเดือนนี้
+          ภาพรวมงบประมาณ
         </h2>
         <div className="space-y-4">
           <div className="flex justify-between text-sm">
-            <span className="text-[color:var(--text-secondary)]">ใช้ไปแล้ว {formatMoney(totalSpent)} {currencySymbol}</span>
-            <span className="text-[color:var(--text-secondary)]">ทั้งหมด {formatMoney(totalBudget)} {currencySymbol}</span>
+            <span className="text-[color:var(--text-secondary)]">ใช้ไปแล้ว {formatMoney(totalSpent, currency)}</span>
+            <span className="text-[color:var(--text-secondary)]">ทั้งหมด {formatMoney(totalBudget, currency)}</span>
           </div>
           <div className="w-full bg-[color:var(--bg-primary)] rounded-full h-4 overflow-hidden border border-[color:var(--border-color)]">
             <div 
@@ -117,7 +134,7 @@ export const Budgets = () => {
             />
           </div>
           <p className={`text-sm font-medium ${totalRemaining < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-            คงเหลือ: {formatMoney(totalRemaining)} {currencySymbol}
+            คงเหลือ: {formatMoney(totalRemaining, currency)}
           </p>
         </div>
       </Card>
@@ -224,7 +241,7 @@ export const Budgets = () => {
                   </div>
                   <div>
                     <h3 className="font-bold text-[color:var(--text-primary)]">{cat.label}</h3>
-                    <p className="text-xs text-[color:var(--text-secondary)]">งบ: {formatMoney(budget.amount)} {currencySymbol}</p>
+                    <p className="text-xs text-[color:var(--text-secondary)]">งบ: {formatMoney(budget.amount, currency)}</p>
                   </div>
                 </div>
                 <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
@@ -247,9 +264,9 @@ export const Budgets = () => {
 
               <div className="mt-auto">
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-[color:var(--text-secondary)]">{formatMoney(budget.spent)}</span>
+                  <span className="text-[color:var(--text-secondary)]">{formatMoney(budget.spent, currency)}</span>
                   <span className={budget.isExceeded ? 'text-rose-400 font-bold' : 'text-[color:var(--text-secondary)]'}>
-                    {budget.isExceeded ? `เกินมา ${formatMoney(Math.abs(budget.remaining))}` : `เหลือ ${formatMoney(budget.remaining)}`}
+                    {budget.isExceeded ? `เกินมา ${formatMoney(Math.abs(budget.remaining), currency)}` : `เหลือ ${formatMoney(budget.remaining, currency)}`}
                   </span>
                 </div>
                 <div className="w-full bg-[color:var(--bg-primary)] rounded-full h-2.5 overflow-hidden border border-[color:var(--border-color)]">
@@ -283,6 +300,28 @@ export const Budgets = () => {
           </div>
         )}
       </div>
+      {/* Delete Budget Confirmation Modal */}
+      {pendingDeleteBudget && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[color:var(--bg-secondary)]/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--bg-card)] p-5 shadow-2xl">
+            <h2 className="text-lg font-bold text-[color:var(--text-primary)]">ลบงบประมาณนี้?</h2>
+            <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
+              {getCategory('expense', pendingDeleteBudget).label} — {formatMoney(budgets[pendingDeleteBudget] || 0, currency)}
+            </p>
+            <div className="mt-5 flex gap-3">
+              <Button variant="ghost" className="flex-1" onClick={() => setPendingDeleteBudget(null)}>ยกเลิก</Button>
+              <Button variant="danger" className="flex-1" onClick={confirmDeleteBudget}>ลบ</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Error Display */}
+      {transferError && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] bg-rose-500/20 border border-rose-500/40 text-rose-300 px-4 py-2 rounded-xl text-xs font-bold animate-pulse">
+          {transferError}
+        </div>
+      )}
     </div>
   );
 };

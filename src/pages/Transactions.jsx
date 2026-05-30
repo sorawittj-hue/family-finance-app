@@ -3,14 +3,15 @@ import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { formatMoney, getCategory } from '../utils/constants';
-import { Edit2, Filter, PlusCircle, Search, Trash2 } from 'lucide-react';
+import { Edit2, Filter, PlusCircle, Search, Trash2, Download } from 'lucide-react';
 import { TransactionModal } from '../components/TransactionModal';
 import { format, parseISO } from 'date-fns';
 import { th } from 'date-fns/locale';
 import { getMonthKey } from '../utils/financeAnalytics';
+import { toast } from '../components/ui/Toast';
 
 export const Transactions = () => {
-  const { transactions, wallets, deleteTransaction, currency } = useFinance();
+  const { transactions, wallets, deleteTransaction, addTransaction, currency } = useFinance();
   const [isAdding, setIsAdding] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [filterType, setFilterType] = useState('all');
@@ -70,11 +71,46 @@ export const Transactions = () => {
     setDeletingId('');
 
     if (success) {
+      const deletedTx = { ...pendingDelete };
       setPendingDelete(null);
+      toast.show({
+        message: 'ลบรายการแล้ว',
+        type: 'info',
+        duration: 5000,
+        onUndo: () => {
+          addTransaction({
+            type: deletedTx.type,
+            category: deletedTx.category,
+            amount: deletedTx.amount,
+            date: deletedTx.date,
+            note: deletedTx.note,
+            walletId: deletedTx.walletId,
+          });
+          toast.show({ message: 'กู้คืนรายการแล้ว', type: 'success', duration: 2000 });
+        },
+      });
       return;
     }
 
     setDeleteError('ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
+  };
+
+  const handleExportFiltered = () => {
+    const toCsvCell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
+    const rows = [
+      ['วันที่', 'ประเภท', 'หมวดหมู่', 'จำนวน', 'กระเป๋าเงิน', 'บันทึก'],
+      ...filteredTxs.map(tx => {
+        const cat = getCategory(tx.type, tx.category);
+        const wallet = wallets.find(w => w.id === tx.walletId);
+        return [tx.date, tx.type === 'income' ? 'รายรับ' : tx.type === 'expense' ? 'รายจ่าย' : 'เงินออม', cat.label, tx.amount, wallet?.name || 'เงินสด', tx.note || ''];
+      }),
+    ];
+    const csv = rows.map(r => r.map(toCsvCell).join(',')).join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `transactions_${filterMonth || 'all'}.csv`; a.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -84,9 +120,14 @@ export const Transactions = () => {
           <h1 className="text-2xl font-extrabold text-[color:var(--text-primary)]">รายการเคลื่อนไหว</h1>
           <p className="text-[color:var(--text-secondary)] text-sm mt-1">ประวัติการรับ-จ่ายทั้งหมดของคุณ</p>
         </div>
-        <Button onClick={() => setIsAdding(true)} className="flex items-center gap-2 shadow-blue-500/20">
-          <PlusCircle size={18} /> เพิ่มรายการใหม่
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleExportFiltered} className="flex items-center gap-2">
+            <Download size={16} /> Export
+          </Button>
+          <Button onClick={() => setIsAdding(true)} className="flex items-center gap-2 shadow-blue-500/20">
+            <PlusCircle size={18} /> เพิ่มรายการใหม่
+          </Button>
+        </div>
       </header>
 
       <Card className="p-4 md:p-6">
@@ -173,13 +214,13 @@ export const Transactions = () => {
                 filteredTxs.map(tx => {
                   const catObj = getCategory(tx.type, tx.category);
                   const CatIcon = catObj.icon;
-                  const walletObj = wallets.find(w => w.id === tx.walletId) || { name: 'Cash', color: '#94a3b8' };
+                  const walletObj = wallets.find(w => w.id === tx.walletId) || { name: 'เงินสด', color: '#94a3b8' };
                   
                   return (
                     <tr key={tx.id} className="border-b border-[color:var(--border-color)] last:border-0 hover:bg-[color:var(--bg-secondary)] transition-colors group">
                       <td className="py-4 px-4">
                         <div className="text-sm text-[color:var(--text-primary)]">{format(parseISO(tx.date), 'dd MMM yyyy', { locale: th })}</div>
-                        <div className="text-[10px] text-[color:var(--text-muted)] mt-0.5">{format(parseISO(tx.date), 'HH:mm')}</div>
+                        <div className="text-[10px] text-[color:var(--text-muted)] mt-0.5">{tx.timestamp ? format(new Date(tx.timestamp), 'HH:mm') : ''}</div>
                       </td>
                       <td className="py-4 px-4">
                         <div className="flex items-center gap-3">
@@ -209,7 +250,7 @@ export const Transactions = () => {
                         </div>
                       </td>
                       <td className="py-4 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center justify-center gap-1">
                           {!tx.isTransfer && (
                             <button
                               onClick={() => setEditingTransaction(tx)}

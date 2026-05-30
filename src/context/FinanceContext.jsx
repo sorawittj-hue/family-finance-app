@@ -469,6 +469,21 @@ export const FinanceProvider = ({ children }) => {
     }
   }, [recurringTxs, user, syncing]);
 
+  // Auto-trigger recurring transactions that are due today
+  useEffect(() => {
+    if (!recurringTxs || recurringTxs.length === 0) return;
+    const today = new Date();
+    const todayDay = today.getDate();
+    const monthStr = String(today.getMonth() + 1).padStart(2, '0');
+    const currentMonthKey = today.getFullYear() + '-' + monthStr;
+
+    recurringTxs.forEach(bill => {
+      if (!bill.dueDay || bill.dueDay !== todayDay) return;
+      if (bill.lastTriggered && bill.lastTriggered.startsWith(currentMonthKey)) return;
+      triggerRecurringTx(bill.id, bill.walletId || wallets[0]?.id || 'wallet-cash');
+    });
+  }, [recurringTxs]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEYS.MIMO_API_KEY, mimoApiKey);

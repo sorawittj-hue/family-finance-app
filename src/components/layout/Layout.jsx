@@ -3,8 +3,8 @@ import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { AIAssistantBubble } from '../AIAssistantBubble';
-import { LoginBanner } from '../ui/LoginBanner';
 import { SyncStatusBanner } from '../ui/SyncStatusBanner';
+import { ToastContainer } from '../ui/Toast';
 
 export const Layout = () => {
   return (
@@ -14,7 +14,6 @@ export const Layout = () => {
       {/* Main Content Area */}
       <main className="md:ml-64 pb-24 md:pb-8 min-h-screen">
         <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 animate-fade-in">
-          <LoginBanner />
           <SyncStatusBanner />
           <Outlet />
         </div>
@@ -22,6 +21,7 @@ export const Layout = () => {
 
       <BottomNav />
       <AIAssistantBubble />
+      <ToastContainer />
     </div>
   );
 };

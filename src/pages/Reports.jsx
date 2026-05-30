@@ -4,6 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { formatMoney } from '../utils/constants';
 import { buildMonthlyFinanceReport, getMonthKey } from '../utils/financeAnalytics';
+import { subMonths, format } from 'date-fns';
+import { th } from 'date-fns/locale';
 import { useChartSize } from '../hooks/useChartSize';
 import { AlertTriangle, Calendar, CheckCircle2, Clock, Download, PiggyBank, PieChart, ShieldCheck, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, Tooltip, XAxis, YAxis } from 'recharts';
@@ -104,25 +106,25 @@ export const Reports = () => {
 
   const handleExport = () => {
     const rows = [
-      ['Money Nitro Monthly Report', report.monthLabel],
+      ['รายงาน Money Nitro ประจำเดือน', report.monthLabel],
       [],
-      ['Metric', 'Value'],
-      ['Health Score', `${report.healthScore}/100`],
-      ['Income', report.income],
-      ['Expense', report.expense],
-      ['Saving', report.saving],
-      ['Net Cashflow', report.netCashflow],
-      ['Saving Rate', `${report.savingRate.toFixed(2)}%`],
-      ['Projected Expense', report.projectedExpense],
-      ['Total Balance', report.totalBalance],
-      ['Runway Months', report.runwayMonths.toFixed(2)],
+      ['ตัวชี้วัด', 'ค่า'],
+      ['คะแนนสุขภาพ', `${report.healthScore}/100`],
+      ['รายรับ', report.income],
+      ['รายจ่าย', report.expense],
+      ['เงินออม', report.saving],
+      ['กระแสเงินสดสุทธิ', report.netCashflow],
+      ['อัตราออม', `${report.savingRate.toFixed(2)}%`],
+      ['คาดการณ์รายจ่าย', report.projectedExpense],
+      ['ยอดเงินรวม', report.totalBalance],
+      ['เงินสำรองครอบคลุม (เดือน)', report.runwayMonths.toFixed(2)],
       [],
-      ['Top Expense Categories'],
-      ['Category', 'Amount'],
+      ['หมวดรายจ่ายสูงสุด'],
+      ['หมวดหมู่', 'จำนวน'],
       ...report.topCategories.map((category) => [category.name, category.amount]),
       [],
-      ['Budget Usage'],
-      ['Category', 'Limit', 'Spent', 'Remaining', 'Progress', 'Status'],
+      ['การใช้งบประมาณ'],
+      ['หมวดหมู่', 'งบ', 'ใช้ไป', 'เหลือ', 'ความคืบหน้า', 'สถานะ'],
       ...report.budgetUsage.map((budget) => [
         budget.label,
         budget.limit,
@@ -132,8 +134,8 @@ export const Reports = () => {
         budget.status,
       ]),
       [],
-      ['Wallet Balances'],
-      ['Wallet', 'Balance'],
+      ['ยอดเงินในกระเป๋า'],
+      ['กระเป๋าเงิน', 'ยอดเงิน'],
       ...report.walletBalances.map((wallet) => [wallet.name, wallet.balance]),
     ];
 
@@ -144,7 +146,7 @@ export const Reports = () => {
     <div className="space-y-6 pb-10">
       <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wider font-bold text-blue-400 mb-2">Money intelligence</p>
+          <p className="text-xs uppercase tracking-wider font-bold text-blue-400 mb-2">ปัญญาการเงิน</p>
           <h1 className="text-2xl font-extrabold text-[color:var(--text-primary)]">รายงานและสุขภาพการเงิน</h1>
           <p className="text-[color:var(--text-secondary)] text-sm mt-1">อ่านภาพรวมทั้งเดือน พร้อมสัญญาณเตือนและแผนลงมือทำ</p>
         </div>
@@ -169,7 +171,7 @@ export const Reports = () => {
         <Card className="p-5 border-blue-500/20 bg-blue-500/5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">Health Score</p>
+              <p className="text-xs font-semibold text-[color:var(--text-secondary)]">คะแนนสุขภาพ</p>
               <p className="text-3xl font-black text-[color:var(--text-primary)] mt-1">{report.healthScore}/100</p>
             </div>
             <ShieldCheck size={30} className="text-blue-400" />
@@ -267,7 +269,7 @@ export const Reports = () => {
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         <Card className="p-6">
-          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">Action Plan</h2>
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">แผนลงมือ</h2>
           <div className="space-y-3">
             {actionPlan.map((action) => (
               <div key={action.title} className={`rounded-xl border p-4 ${toneClass[action.tone] || toneClass.warning}`}>
@@ -279,7 +281,7 @@ export const Reports = () => {
         </Card>
 
         <Card className="p-6">
-          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">Budget Risk</h2>
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">ความเสี่ยงงบประมาณ</h2>
           <div className="space-y-3">
             {report.budgetUsage.length > 0 ? report.budgetUsage.slice(0, 6).map((budget) => (
               <div key={budget.categoryId} className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
@@ -304,7 +306,7 @@ export const Reports = () => {
         </Card>
 
         <Card className="p-6">
-          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">Wallet & Recurring</h2>
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)] mb-4">กระเป๋าเงินและบิลประจำ</h2>
           <div className="space-y-3">
             {report.walletBalances.map((wallet) => (
               <div key={wallet.id} className="flex items-center justify-between gap-3 rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-3">
@@ -337,6 +339,51 @@ export const Reports = () => {
           </div>
         </Card>
       </div>
+      {/* Category Trend Section */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-bold text-[color:var(--text-primary)]">แนวโน้มรายจ่ายตามหมวด (6 เดือน)</h2>
+        </div>
+        <CategoryTrend transactions={transactions} currency={currency} />
+      </Card>
     </div>
   );
 };
+
+const CategoryTrend = ({ transactions, currency }) => {
+  const trendData = useMemo(() => {
+    const months = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = subMonths(now, i);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      const label = format(d, 'MMM yy', { locale: th });
+      const txs = transactions.filter(t => t.type === 'expense' && t.date?.startsWith(key));
+      const total = txs.reduce((s, t) => s + t.amount, 0);
+      months.push({ key, label, total });
+    }
+    return months;
+  }, [transactions]);
+
+  const maxVal = Math.max(...trendData.map(d => d.total), 1);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-end gap-2 h-40">
+        {trendData.map((month) => (
+          <div key={month.key} className="flex-1 flex flex-col items-center gap-1">
+            <span className="text-[10px] text-[color:var(--text-muted)] font-bold">
+              {month.total > 0 ? formatMoney(month.total, currency) : '-'}
+            </span>
+            <div
+              className="w-full bg-blue-500/30 rounded-t-lg transition-all duration-500 hover:bg-blue-500/50"
+              style={{ height: `${Math.max((month.total / maxVal) * 100, 4)}%` }}
+            />
+            <span className="text-[10px] text-[color:var(--text-muted)]">{month.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+

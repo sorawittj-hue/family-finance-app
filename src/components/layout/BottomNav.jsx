@@ -1,62 +1,119 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, LineChart, List, Target, PieChart, Settings, Rocket, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, LineChart, List, Target, PieChart, Settings, Rocket, TrendingUp, MoreHorizontal, X } from 'lucide-react';
 import { cn } from '../../utils/cn';
 
-const NAV_ITEMS = [
-  { path: '/', label: 'ภาพรวม', icon: LayoutDashboard, shortLabel: 'หน้าแรก' },
-  { path: '/transactions', label: 'รายการ', icon: List, shortLabel: 'บันทึก' },
-  { path: '/budgets', label: 'งบประมาณ', icon: PieChart, shortLabel: 'งบ' },
-  { path: '/goals', label: 'เป้าหมาย', icon: Target, shortLabel: 'ออม' },
-  { path: '/reports', label: 'รายงาน', icon: LineChart, shortLabel: 'รายงาน' },
-  { path: '/portfolio', label: 'พอร์ต', icon: TrendingUp, shortLabel: 'ลงทุน' },
-  { path: '/wealth', label: 'Coach', icon: Rocket, shortLabel: 'Coach' },
-  { path: '/settings', label: 'ตั้งค่า', icon: Settings, shortLabel: 'ตั้งค่า' },
+const MAIN_NAV = [
+  { path: '/', label: 'หน้าแรก', icon: LayoutDashboard },
+  { path: '/transactions', label: 'บันทึก', icon: List },
+  { path: '/budgets', label: 'งบ', icon: PieChart },
+  { path: '/goals', label: 'ออม', icon: Target },
+];
+
+const MORE_NAV = [
+  { path: '/reports', label: 'รายงาน', icon: LineChart },
+  { path: '/portfolio', label: 'ลงทุน', icon: TrendingUp },
+  { path: '/wealth', label: 'Coach', icon: Rocket },
+  { path: '/settings', label: 'ตั้งค่า', icon: Settings },
 ];
 
 export const BottomNav = () => {
+  const [moreOpen, setMoreOpen] = useState(false);
+
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 w-full bg-[color:var(--bg-secondary)]/95 backdrop-blur-xl border-t border-[color:var(--border-color)] z-50 px-1 pb-safe">
-      <div className="flex justify-around items-center h-16">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) =>
-                cn(
-                  "flex flex-col items-center justify-center min-w-0 flex-1 h-full transition-all duration-200",
-                  isActive 
-                    ? "text-blue-400" 
-                    : "text-[color:var(--text-muted)] active:text-[color:var(--text-primary)]"
-                )
-              }
-            >
-              {({ isActive }) => (
-                <>
-                  <div className={cn(
-                    "p-1.5 rounded-xl transition-all duration-300",
-                    isActive ? "bg-blue-500/20 scale-105" : "bg-transparent"
-                  )}>
-                    <Icon size={18} strokeWidth={isActive ? 2.5 : 2} className={cn("transition-transform duration-300", isActive ? "scale-110" : "scale-100")} />
-                  </div>
-                  <span className={cn(
-                    "text-[9px] font-semibold mt-0.5 transition-all duration-300 leading-tight",
-                    isActive ? "opacity-100 text-blue-400" : "opacity-60"
-                  )}>
-                    {item.shortLabel}
-                  </span>
-                  {isActive && (
-                    <div className="absolute top-0 w-8 h-0.5 bg-blue-500 rounded-b-full" />
-                  )}
-                </>
-              )}
-            </NavLink>
-          );
-        })}
-      </div>
-    </nav>
+    <>
+      {/* More menu overlay */}
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm" onClick={() => setMoreOpen(false)}>
+          <div className="absolute bottom-20 left-4 right-4 bg-[color:var(--bg-card)] border border-[color:var(--border-color)] rounded-2xl p-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-bold text-[color:var(--text-primary)]">เมนูเพิ่มเติม</h3>
+              <button onClick={() => setMoreOpen(false)} className="p-1 rounded-lg text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {MORE_NAV.map(item => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    onClick={() => setMoreOpen(false)}
+                    className={({ isActive }) => cn(
+                      "flex items-center gap-3 p-3 rounded-xl transition-all",
+                      isActive
+                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                        : "bg-[color:var(--bg-secondary)] text-[color:var(--text-secondary)] border border-[color:var(--border-color)]"
+                    )}
+                  >
+                    <Icon size={18} />
+                    <span className="text-xs font-bold">{item.label}</span>
+                  </NavLink>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <nav className="md:hidden fixed bottom-0 left-0 w-full bg-[color:var(--bg-secondary)]/95 backdrop-blur-xl border-t border-[color:var(--border-color)] z-50 px-1 pb-safe">
+        <div className="flex justify-around items-center h-16">
+          {MAIN_NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === '/'}
+                className={({ isActive }) =>
+                  cn(
+                    "flex flex-col items-center justify-center min-w-0 flex-1 h-full transition-all duration-200",
+                    isActive
+                      ? "text-blue-400"
+                      : "text-[color:var(--text-muted)] active:text-[color:var(--text-primary)]"
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <div className={cn(
+                      "p-1.5 rounded-xl transition-all duration-300",
+                      isActive ? "bg-blue-500/20 scale-105" : "bg-transparent"
+                    )}>
+                      <Icon size={18} strokeWidth={isActive ? 2.5 : 2} className={cn("transition-transform duration-300", isActive ? "scale-110" : "scale-100")} />
+                    </div>
+                    <span className={cn(
+                      "text-[9px] font-semibold mt-0.5 transition-all duration-300 leading-tight",
+                      isActive ? "opacity-100 text-blue-400" : "opacity-60"
+                    )}>
+                      {item.label}
+                    </span>
+                    {isActive && (
+                      <div className="absolute top-0 w-8 h-0.5 bg-blue-500 rounded-b-full" />
+                    )}
+                  </>
+                )}
+              </NavLink>
+            );
+          })}
+          {/* More button */}
+          <button
+            onClick={() => setMoreOpen(!moreOpen)}
+            className={cn(
+              "flex flex-col items-center justify-center min-w-0 flex-1 h-full transition-all duration-200",
+              moreOpen ? "text-blue-400" : "text-[color:var(--text-muted)]"
+            )}
+          >
+            <div className={cn("p-1.5 rounded-xl transition-all duration-300", moreOpen ? "bg-blue-500/20" : "bg-transparent")}>
+              <MoreHorizontal size={18} />
+            </div>
+            <span className={cn("text-[9px] font-semibold mt-0.5 leading-tight", moreOpen ? "opacity-100 text-blue-400" : "opacity-60")}>
+              เพิ่มเติม
+            </span>
+          </button>
+        </div>
+      </nav>
+    </>
   );
 };

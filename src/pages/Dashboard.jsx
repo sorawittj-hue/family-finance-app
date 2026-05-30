@@ -2,7 +2,6 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { LoginBanner } from '../components/ui/LoginBanner';
 import { formatMoney, formatMoneyShort } from '../utils/constants';
 import { 
   ArrowUpRight, ArrowDownRight, ArrowRightLeft, AlertTriangle, 
@@ -11,6 +10,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, Cell } from 'recharts';
 import { format, subDays } from 'date-fns';
+import { th } from 'date-fns/locale';
 import { TransferModal } from '../components/TransferModal';
 import { useChartSize } from '../hooks/useChartSize';
 import { buildMonthlyFinanceReport, getMonthKey, isTransferTransaction } from '../utils/financeAnalytics';
@@ -32,6 +32,7 @@ export const Dashboard = () => {
   const [quickAmount, setQuickAmount] = useState('');
   const [quickWalletId, setQuickWalletId] = useState('');
   const [quickStatus, setQuickStatus] = useState('');
+  const [quickType, setQuickType] = useState('expense');
 
   // Set default quick wallet
   useEffect(() => {
@@ -40,7 +41,7 @@ export const Dashboard = () => {
     }
   }, [wallets, quickWalletId]);
 
-  const handleQuickRecord = (categoryId) => {
+  const handleQuickRecord = async (categoryId) => {
     const amt = parseFloat(quickAmount);
     if (!amt || isNaN(amt) || amt <= 0) {
       setQuickStatus('error');
@@ -48,8 +49,8 @@ export const Dashboard = () => {
       return;
     }
 
-    const success = addTransaction({
-      type: 'expense',
+    const success = await addTransaction({
+      type: quickType,
       category: categoryId,
       amount: amt,
       date: new Date().toISOString().split('T')[0],
@@ -89,7 +90,7 @@ export const Dashboard = () => {
       const inc = dayTxs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
       const sav = dayTxs.filter(t => t.type === 'saving').reduce((s, t) => s + t.amount, 0);
       days.push({
-        name: format(d, 'dd MMM'),
+        name: format(d, 'dd MMM', { locale: th }),
         expense: exp,
         income: inc,
         saving: sav,
@@ -100,9 +101,6 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
-      {/* Login banner — visible when not logged in */}
-      {!user && <LoginBanner />}
-
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-[color:var(--text-primary)]">ภาพรวมสถานะการเงิน</h1>
@@ -163,7 +161,7 @@ export const Dashboard = () => {
                 <ShieldCheck size={28} />
               </div>
               <div>
-                <p className="text-xs uppercase tracking-wider text-[color:var(--text-muted)] font-bold">Financial Health Score</p>
+                <p className="text-xs uppercase tracking-wider text-[color:var(--text-muted)] font-bold">คะแนนสุขภาพการเงิน</p>
                 <h2 className="text-3xl font-black text-[color:var(--text-primary)] mt-1">{report.healthScore}/100</h2>
                 <p className="text-xs text-[color:var(--text-secondary)] mt-1">คำนวณจากกระแสเงินสด เงินออม งบประมาณ เงินสำรอง และภาระหนี้</p>
               </div>
@@ -216,6 +214,31 @@ export const Dashboard = () => {
           </div>
 
           <div className="space-y-4 flex-1 flex flex-col justify-between">
+            {/* Type Toggle */}
+            <div>
+              <label className="block text-[9px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider mb-2">ประเภท</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickType('expense')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                    quickType === 'expense'
+                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                      : 'bg-[color:var(--bg-secondary)] border-[color:var(--border-color)] text-[color:var(--text-secondary)]'
+                  }`}
+                >จ่าย</button>
+                <button
+                  type="button"
+                  onClick={() => setQuickType('income')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                    quickType === 'income'
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                      : 'bg-[color:var(--bg-secondary)] border-[color:var(--border-color)] text-[color:var(--text-secondary)]'
+                  }`}
+                >รับ</button>
+              </div>
+            </div>
+
             {/* Wallet Selection */}
             <div>
               <label className="block text-[9px] font-bold text-[color:var(--text-muted)] uppercase tracking-wider mb-2">เลือกกระเป๋าเงิน</label>

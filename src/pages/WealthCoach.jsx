@@ -27,8 +27,8 @@ export const WealthCoach = () => {
     <div className="space-y-6">
       <header className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-wider text-blue-300 font-black">Wealth operating system</p>
-          <h1 className="text-3xl font-extrabold text-[color:var(--text-primary)] mt-1">Money command center</h1>
+          <p className="text-xs uppercase tracking-wider text-blue-300 font-black">ระบบจัดการความมั่งคั่ง</p>
+          <h1 className="text-3xl font-extrabold text-[color:var(--text-primary)] mt-1">ศูนย์บัญชาการการเงิน</h1>
           <p className="text-sm text-[color:var(--text-secondary)] mt-2 max-w-2xl">
             เปลี่ยนข้อมูลการเงินให้เป็นแผนลงมือจริง: รักษา cashflow, เพิ่มเงินออม, ลดรอยรั่ว และเร่งความเร็วสู่ความมั่งคั่ง
           </p>
@@ -48,21 +48,21 @@ export const WealthCoach = () => {
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold mb-3">
-            <TrendingUp size={15} /> Wealth velocity
+            <TrendingUp size={15} /> ความเร็วสร้างความมั่งคั่ง
           </div>
           <p className="text-2xl font-black text-emerald-300">{formatMoney(system.annualizedWealthVelocity, currency)}</p>
           <p className="text-xs text-[color:var(--text-secondary)] mt-2">กำลังสร้างความมั่งคั่งต่อปีจากเงินออมและ surplus</p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-2 text-amber-300 text-xs font-bold mb-3">
-            <ShieldCheck size={15} /> Runway gap
+            <ShieldCheck size={15} /> ช่องว่างเงินสำรอง
           </div>
           <p className="text-2xl font-black text-[color:var(--text-primary)]">{formatMoney(system.runwayGap, currency)}</p>
           <p className="text-xs text-[color:var(--text-secondary)] mt-2">เงินที่ต้องเติมเพื่อให้ครอบคลุมรายจ่าย 6 เดือน</p>
         </Card>
         <Card className="p-5">
           <div className="flex items-center gap-2 text-rose-300 text-xs font-bold mb-3">
-            <AlertTriangle size={15} /> Subscription drag
+            <AlertTriangle size={15} /> ภาระค่าใช้จ่ายประจำ
           </div>
           <p className="text-2xl font-black text-[color:var(--text-primary)]">{formatMoney(system.recurringExpense, currency)}</p>
           <p className="text-xs text-[color:var(--text-secondary)] mt-2">รายจ่ายประจำต่อเดือนที่ต้องคุ้มค่าจริง</p>
@@ -99,7 +99,7 @@ export const WealthCoach = () => {
               <Target size={22} />
             </div>
             <div>
-              <h2 className="text-lg font-black text-[color:var(--text-primary)]">Next best move</h2>
+              <h2 className="text-lg font-black text-[color:var(--text-primary)]">สิ่งที่ควรทำถัดไป</h2>
               <p className="text-xs text-[color:var(--text-secondary)]">สิ่งเดียวที่ควรทำก่อนเพื่อ leverage สูงสุด</p>
             </div>
           </div>
@@ -126,21 +126,21 @@ export const WealthCoach = () => {
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-5">
             <PiggyBank className="text-emerald-300" size={22} />
-            <h2 className="text-lg font-black text-[color:var(--text-primary)]">Emergency capital progress</h2>
+            <h2 className="text-lg font-black text-[color:var(--text-primary)]">ความคืบหน้าเงินสำรองฉุกเฉิน</h2>
           </div>
           <div className="h-4 rounded-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] overflow-hidden">
             <div className="h-full bg-emerald-500" style={{ width: `${system.emergencyProgress}%` }} />
           </div>
           <div className="flex justify-between text-xs text-[color:var(--text-secondary)] mt-3">
-            <span>{system.emergencyProgress.toFixed(0)}% funded</span>
-            <span>{system.report.runwayMonths.toFixed(1)} months runway</span>
+            <span>สำเร็จ {system.emergencyProgress.toFixed(0)}%</span>
+            <span>ครอบคลุม {system.report.runwayMonths.toFixed(1)} เดือน</span>
           </div>
         </Card>
 
         <Card className="p-6">
           <div className="flex items-center gap-3 mb-5">
             <AlertTriangle className="text-amber-300" size={22} />
-            <h2 className="text-lg font-black text-[color:var(--text-primary)]">Budget leaks to close</h2>
+            <h2 className="text-lg font-black text-[color:var(--text-primary)]">รอยรั่วงบประมาณ</h2>
           </div>
           <div className="space-y-3">
             {system.budgetLeaks.length > 0 ? system.budgetLeaks.map((leak) => (
