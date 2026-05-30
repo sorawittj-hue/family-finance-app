@@ -290,6 +290,7 @@ export const FinanceProvider = ({ children }) => {
 
   const loadUserStates = useCallback(async (currentUser) => {
     setSyncing(true);
+    // Load cached data immediately so UI is not empty
     const cachedWallets = loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, currentUser.id);
     const cachedTxs = loadData(STORAGE_KEYS.TRANSACTIONS, [], currentUser.id);
     const cachedBudgets = loadData(STORAGE_KEYS.BUDGETS, {}, currentUser.id);
@@ -302,12 +303,12 @@ export const FinanceProvider = ({ children }) => {
     setGoals(cachedGoals);
     setRecurringTxs(cachedRecurring);
 
-    if (navigator.onLine) {
-      try {
-        await fetchCloudData(currentUser.id);
-      } catch (err) {
-        console.error("Error fetching cloud data on login:", err);
-      }
+    // Always attempt to fetch fresh data from cloud
+    // (do NOT check navigator.onLine — it gives false negatives in PWA)
+    try {
+      await fetchCloudData(currentUser.id);
+    } catch (err) {
+      console.warn('[Sync] Cloud fetch failed, using cached data:', err.message);
     }
     setSyncing(false);
   }, [fetchCloudData]);
@@ -327,6 +328,7 @@ export const FinanceProvider = ({ children }) => {
   // Supabase Auth listener
   useEffect(() => {
     let active = true;
+    let lastUserId = null;
 
     setSyncing(true);
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -334,21 +336,36 @@ export const FinanceProvider = ({ children }) => {
       const currentUser = session?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
+        lastUserId = currentUser.id;
         await loadUserStates(currentUser);
       } else {
         setSyncing(false);
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!active) return;
-      setSyncing(true);
       const currentUser = session?.user ?? null;
+
+      // Avoid duplicate loads for INITIAL_SESSION/TOKEN_REFRESHED with same user
+      if (
+        currentUser &&
+        lastUserId === currentUser.id &&
+        (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
+      ) {
+        setUser(currentUser);
+        return;
+      }
+
+      setSyncing(true);
       setUser(currentUser);
+
       if (currentUser) {
+        lastUserId = currentUser.id;
         await loadUserStates(currentUser);
       } else {
-        // Reset states to local storage (offline)
+        lastUserId = null;
+        // Reset to local storage data
         setWallets(loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null));
         setTransactions(loadData(STORAGE_KEYS.TRANSACTIONS, [], null));
         setBudgets(loadData(STORAGE_KEYS.BUDGETS, {}, null));

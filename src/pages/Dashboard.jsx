@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { LoginBanner } from '../components/ui/LoginBanner';
 import { formatMoney, formatMoneyShort } from '../utils/constants';
 import { 
   ArrowUpRight, ArrowDownRight, ArrowRightLeft, AlertTriangle, 
@@ -21,7 +22,7 @@ const insightToneClass = {
 };
 
 export const Dashboard = () => {
-  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction } = useFinance();
+  const { transactions, wallets, budgets, currency, recurringTxs, addTransaction, user } = useFinance();
   const [isTransferOpen, setIsTransferOpen] = useState(false);
   const currentMonthKey = useMemo(() => getMonthKey(), []);
   const trendChart = useChartSize();
@@ -99,6 +100,9 @@ export const Dashboard = () => {
 
   return (
     <div className="space-y-6">
+      {/* Login banner — visible when not logged in */}
+      {!user && <LoginBanner />}
+
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
         <div>
           <h1 className="text-2xl font-extrabold text-[color:var(--text-primary)]">ภาพรวมสถานะการเงิน</h1>
