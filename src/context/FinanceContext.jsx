@@ -728,25 +728,25 @@ export const FinanceProvider = ({ children }) => {
 
       const walletsToInsert = offlineWallets
         .filter(w => !dbWalletIds.has(w.id))
-        .map(w => mapWalletToDb(w, 'shared'));
+        .map(w => mapWalletToDb(w, user?.id || 'anonymous'));
 
       const txsToInsert = offlineTxs
         .filter(t => !dbTxIds.has(t.id))
-        .map(t => mapTxToDb(t, 'shared'));
+        .map(t => mapTxToDb(t, user?.id || 'anonymous'));
 
       const budgetsToUpsert = Object.entries(offlineBudgets).map(([catId, amount]) => ({
-        user_id: 'shared',
+        user_id: user?.id || 'anonymous',
         category_id: catId,
         amount: Number(amount)
       }));
 
       const goalsToInsert = offlineGoals
         .filter(g => !dbGoalIds.has(g.id))
-        .map(g => mapGoalToDb(g, 'shared'));
+        .map(g => mapGoalToDb(g, user?.id || 'anonymous'));
 
       const recurringToInsert = offlineRecurring
         .filter(r => !dbRecurringIds.has(r.id))
-        .map(r => mapRecurringToDb(r, 'shared'));
+        .map(r => mapRecurringToDb(r, user?.id || 'anonymous'));
 
       if (walletsToInsert.length > 0) {
         const { error } = await supabase.from('wallets').insert(walletsToInsert);
@@ -843,7 +843,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('transactions')
-          .insert(mapTxToDb(newTx, 'shared'));
+          .insert(mapTxToDb(newTx, user?.id || 'anonymous'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add transaction to cloud failed:', err.message);
@@ -994,7 +994,7 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('budgets')
           .upsert({
-            user_id: 'shared',
+            user_id: user?.id || 'anonymous',
             category_id: categoryId,
             amount: Number(amount)
           }, { onConflict: 'user_id,category_id' });
@@ -1051,8 +1051,8 @@ export const FinanceProvider = ({ children }) => {
         const { error } = await supabase
           .from('budgets')
           .upsert([
-            { user_id: 'shared', category_id: fromCatId, amount: nextFromAmount },
-            { user_id: 'shared', category_id: toCatId, amount: nextToAmount }
+            { user_id: user?.id || 'anonymous', category_id: fromCatId, amount: nextFromAmount },
+            { user_id: user?.id || 'anonymous', category_id: toCatId, amount: nextToAmount }
           ], { onConflict: 'user_id,category_id' });
         if (error) throw error;
       } catch (err) {
@@ -1082,7 +1082,7 @@ export const FinanceProvider = ({ children }) => {
       try {
         const { error } = await supabase
           .from('goals')
-          .insert(mapGoalToDb(newGoal, 'shared'));
+          .insert(mapGoalToDb(newGoal, user?.id || 'anonymous'));
         if (error) throw error;
       } catch (err) {
         console.warn('[Sync] Add goal to cloud failed:', err.message);
@@ -1303,15 +1303,15 @@ export const FinanceProvider = ({ children }) => {
           supabase.from('wallets').delete()]);
         deleteResults.forEach(throwIfSupabaseError);
 
-        const walletsToInsert = demo.wallets.map(w => mapWalletToDb(w, 'shared'));
-        const txsToInsert = demo.transactions.map(t => mapTxToDb(t, 'shared'));
+        const walletsToInsert = demo.wallets.map(w => mapWalletToDb(w, user?.id || 'anonymous'));
+        const txsToInsert = demo.transactions.map(t => mapTxToDb(t, user?.id || 'anonymous'));
         const budgetsToInsert = Object.entries(demo.budgets).map(([catId, amount]) => ({
-          user_id: 'shared',
+          user_id: user?.id || 'anonymous',
           category_id: catId,
           amount: Number(amount)
         }));
-        const goalsToInsert = demo.goals.map(g => mapGoalToDb(g, 'shared'));
-        const recurringToInsert = demoRecurring.map(r => mapRecurringToDb(r, 'shared'));
+        const goalsToInsert = demo.goals.map(g => mapGoalToDb(g, user?.id || 'anonymous'));
+        const recurringToInsert = demoRecurring.map(r => mapRecurringToDb(r, user?.id || 'anonymous'));
 
         throwIfSupabaseError(await supabase.from('wallets').insert(walletsToInsert));
         if (txsToInsert.length > 0) throwIfSupabaseError(await supabase.from('transactions').insert(txsToInsert));
@@ -1344,7 +1344,7 @@ export const FinanceProvider = ({ children }) => {
           supabase.from('wallets').delete()]);
         deleteResults.forEach(throwIfSupabaseError);
         
-        const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, 'shared'));
+        const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, user?.id || 'anonymous'));
         throwIfSupabaseError(await supabase.from('wallets').insert(defaultWalletsWithUser));
       } catch (err) {
         console.warn('[Sync] Reset cloud data failed:', err.message);
@@ -1402,14 +1402,14 @@ export const FinanceProvider = ({ children }) => {
           deleteResults.forEach(throwIfSupabaseError);
 
           if (parsed.wallets) {
-            throwIfSupabaseError(await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, 'shared'))));
+            throwIfSupabaseError(await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, user?.id || 'anonymous'))));
           }
           if (parsed.transactions && parsed.transactions.length > 0) {
-            throwIfSupabaseError(await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, 'shared'))));
+            throwIfSupabaseError(await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, user?.id || 'anonymous'))));
           }
           if (parsed.budgets) {
             const budgetsToInsert = Object.entries(parsed.budgets).map(([catId, amount]) => ({
-              user_id: 'shared',
+              user_id: user?.id || 'anonymous',
               category_id: catId,
               amount: Number(amount)
             }));
@@ -1418,10 +1418,10 @@ export const FinanceProvider = ({ children }) => {
             }
           }
           if (parsed.goals && parsed.goals.length > 0) {
-            throwIfSupabaseError(await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, 'shared'))));
+            throwIfSupabaseError(await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, user?.id || 'anonymous'))));
           }
           if (parsed.recurringTxs && parsed.recurringTxs.length > 0) {
-            throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, 'shared'))));
+            throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, user?.id || 'anonymous'))));
           }
         } catch (err) {
           console.warn('[Sync] Import cloud data failed:', err.message);
