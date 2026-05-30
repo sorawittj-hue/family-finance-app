@@ -104,7 +104,7 @@ export const Reports = () => {
 
   const handleExport = () => {
     const rows = [
-      ['Family Finance Monthly Report', report.monthLabel],
+      ['Money Nitro Monthly Report', report.monthLabel],
       [],
       ['Metric', 'Value'],
       ['Health Score', `${report.healthScore}/100`],

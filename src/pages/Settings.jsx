@@ -1,14 +1,21 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { getCategory, CURRENCY_MAP, CATEGORIES, formatMoney } from '../utils/constants';
 import { 
   Download, Upload, ShieldAlert, CheckCircle2, Moon, Sun, 
-  Smartphone, Eye, Sparkles, Printer, FileSpreadsheet, 
+  Smartphone, Eye, EyeOff, Sparkles, Printer, FileSpreadsheet, 
   Trash2, Plus, Edit2, Database, AlertTriangle, X,
-  Clock, Landmark, CreditCard
+  Clock, Landmark, CreditCard, Cpu, Info,
+  Cloud, LogIn, UserPlus, LogOut, RefreshCw
 } from 'lucide-react';
+
+const DEFAULT_WALLETS = [
+  { id: 'wallet-cash', name: 'เงินสด', color: '#10b981', type: 'cash' },
+  { id: 'wallet-bank', name: 'บัญชีธนาคาร', color: '#3b82f6', type: 'bank' },
+  { id: 'wallet-ktc', name: 'บัตรเครดิต', color: '#f43f5e', type: 'credit' }
+];
 
 export const Settings = () => {
   const { 
@@ -30,7 +37,18 @@ export const Settings = () => {
     recurringTxs,
     addRecurringTx,
     deleteRecurringTx,
-    triggerRecurringTx
+    triggerRecurringTx,
+    mimoApiKey,
+    setMimoApiKey,
+    mimoModel,
+    setMimoModel,
+    user,
+    isOnline,
+    syncing,
+    login,
+    signUp,
+    logout,
+    syncLocalDataToCloud
   } = useFinance();
   
   const fileInputRef = useRef(null);
@@ -46,6 +64,113 @@ export const Settings = () => {
 
   const [isAddingBill, setIsAddingBill] = useState(false);
   const [billForm, setBillForm] = useState({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly', dueDay: '1' });
+
+  // Auth local states
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authMode, setAuthMode] = useState('login'); // 'login' or 'signup'
+  const [authError, setAuthError] = useState('');
+  const [authSuccess, setAuthSuccess] = useState('');
+  const [syncStatusMsg, setSyncStatusMsg] = useState(null);
+
+
+  const hasLocalData = useMemo(() => {
+    if (!user) return false;
+    try {
+      const txs = localStorage.getItem('family_finance_transactions');
+      const wts = localStorage.getItem('family_finance_wallets');
+      const bds = localStorage.getItem('family_finance_budgets');
+      const gls = localStorage.getItem('family_finance_goals');
+      const rec = localStorage.getItem('family_finance_recurring');
+
+      const hasTxs = txs && JSON.parse(txs).length > 0;
+      const hasWallets = wts && JSON.parse(wts).length > DEFAULT_WALLETS.length;
+      const hasBudgets = bds && Object.keys(JSON.parse(bds)).length > 0;
+      const hasGoals = gls && JSON.parse(gls).length > 0;
+      const hasRecurring = rec && JSON.parse(rec).length > 0;
+
+      return hasTxs || hasWallets || hasBudgets || hasGoals || hasRecurring;
+    } catch {
+      return false;
+    }
+  }, [user]);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError('');
+    setAuthSuccess('');
+
+    if (!authEmail.trim() || !authPassword.trim()) {
+      setAuthError('กรุณากรอกอีเมลและรหัสผ่าน');
+      return;
+    }
+
+    if (authMode === 'login') {
+      const res = await login(authEmail, authPassword);
+      if (res.success) {
+        setAuthSuccess('เข้าสู่ระบบสำเร็จแล้ว!');
+        setAuthEmail('');
+        setAuthPassword('');
+      } else {
+        setAuthError(res.error || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ');
+      }
+    } else {
+      const res = await signUp(authEmail, authPassword);
+      if (res.success) {
+        setAuthSuccess('สมัครสมาชิกสำเร็จแล้ว! กรุณาตรวจสอบอีเมลยืนยันตัวตนหากได้รับลิงก์');
+        setAuthEmail('');
+        setAuthPassword('');
+      } else {
+        setAuthError(res.error || 'เกิดข้อผิดพลาดในการสมัครสมาชิก');
+      }
+    }
+  };
+
+  const handleSyncClick = async () => {
+    setSyncStatusMsg({ type: 'info', text: 'กำลังซิงก์ข้อมูลขึ้นระบบคลาวด์...' });
+    const res = await syncLocalDataToCloud();
+    if (res.success) {
+      setSyncStatusMsg({ type: 'success', text: 'ซิงก์และผสานข้อมูลขึ้นระบบคลาวด์สำเร็จเรียบร้อย!' });
+      setTimeout(() => setSyncStatusMsg(null), 4000);
+    } else {
+      setSyncStatusMsg({ type: 'error', text: res.error || 'เกิดข้อผิดพลาดในการซิงก์ข้อมูล' });
+      setTimeout(() => setSyncStatusMsg(null), 4000);
+    }
+  };
+
+  // PWA & AI Key Visibility States
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    // Check if already in standalone mode
+    if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
+      setIsInstallable(false);
+    }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.info(`PWA Install Choice: ${outcome}`);
+    setDeferredPrompt(null);
+    setIsInstallable(false);
+  };
 
   const THEMES = [
     { id: 'dark', name: 'มืด (Dark)', icon: Moon, desc: 'สบายตา ถนอมสายตา' },
@@ -176,6 +301,157 @@ export const Settings = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         
+        {/* Cloud Sync & Auth Card */}
+        <Card className="p-6 col-span-1 lg:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center">
+                <Cloud size={20} />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[color:var(--text-primary)]">ระบบซิงก์ข้อมูลออนไลน์ (Cloud Sync)</h3>
+                <p className="text-xs text-[color:var(--text-secondary)]">ซิงก์ข้อมูลทางการเงินของคุณขึ้นคลาวด์ เพื่อการเข้าถึงจากหลายอุปกรณ์</p>
+              </div>
+            </div>
+            {user && (
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                isOnline ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                {isOnline ? 'เชื่อมต่อคลาวด์แล้ว (Sync)' : 'ออฟไลน์ชั่วคราว (Offline)'}
+              </span>
+            )}
+          </div>
+
+          {user ? (
+            <div className="space-y-4">
+              <div className="bg-[color:var(--bg-secondary)] p-4 rounded-xl border border-[color:var(--border-color)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <p className="text-[10px] text-[color:var(--text-muted)] font-medium">เข้าสู่ระบบด้วยบัญชี</p>
+                  <p className="text-sm font-bold text-[color:var(--text-primary)] mt-0.5">{user.email}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={logout} 
+                    disabled={syncing}
+                    className="flex items-center gap-1.5 text-xs text-rose-400 hover:bg-rose-500/10"
+                  >
+                    <LogOut size={14} /> ออกจากระบบ
+                  </Button>
+                </div>
+              </div>
+
+              {hasLocalData && (
+                <div className="p-4 bg-blue-500/5 rounded-xl border border-blue-500/10 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <Info size={16} className="text-blue-400 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-[color:var(--text-primary)]">ตรวจพบข้อมูลในเครื่องที่ยังไม่ได้ซิงก์</h4>
+                      <p className="text-[11px] text-[color:var(--text-secondary)] mt-1 leading-relaxed">
+                        มีข้อมูลประวัติรายรับรายจ่ายที่บันทึกไว้ในเครื่องก่อนเข้าสู่ระบบ คุณต้องการนำข้อมูลนี้ไปซิงก์รวมกันบนระบบคลาวด์หรือไม่?
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <Button 
+                      size="sm" 
+                      onClick={handleSyncClick} 
+                      disabled={syncing || !isOnline}
+                      className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-500 border-none text-white shadow-md shadow-blue-500/25"
+                    >
+                      <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+                      ซิงก์ข้อมูลขึ้นคลาวด์
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {syncStatusMsg && (
+                <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                  syncStatusMsg.type === 'success' ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400' :
+                  syncStatusMsg.type === 'error' ? 'bg-rose-500/5 border-rose-500/10 text-rose-400' :
+                  'bg-blue-500/5 border-blue-500/10 text-blue-400'
+                }`}>
+                  {syncStatusMsg.type === 'success' && <CheckCircle2 size={14} />}
+                  {syncStatusMsg.type === 'error' && <ShieldAlert size={14} />}
+                  {syncStatusMsg.type === 'info' && <RefreshCw size={14} className="animate-spin" />}
+                  <span>{syncStatusMsg.text}</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-xs text-[color:var(--text-secondary)] leading-relaxed">
+                เข้าสู่ระบบหรือลงทะเบียนเพื่อบันทึกข้อมูลของคุณขึ้นคลาวด์โดยอัตโนมัติ คุณจะสามารถเข้าถึงกระเป๋าเงิน ธุรกรรม และเป้าหมายการเงินของคุณได้จากทุกอุปกรณ์อย่างสะดวกสบายและปลอดภัย
+              </p>
+
+              {authError && (
+                <div className="p-3 bg-rose-500/5 border border-rose-500/10 rounded-xl text-rose-400 text-xs flex items-center gap-2 animate-shake">
+                  <ShieldAlert size={14} />
+                  <span>{authError}</span>
+                </div>
+              )}
+
+              {authSuccess && (
+                <div className="p-3 bg-emerald-500/5 border border-emerald-500/10 rounded-xl text-emerald-400 text-xs flex items-center gap-2">
+                  <CheckCircle2 size={14} />
+                  <span>{authSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAuthSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] text-[color:var(--text-muted)] mb-1.5">อีเมล (Email)</label>
+                  <input 
+                    type="email" 
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="example@email.com"
+                    required
+                    className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-xs text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-[color:var(--text-muted)] mb-1.5">รหัสผ่าน (Password)</label>
+                  <input 
+                    type="password" 
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="อย่างน้อย 6 ตัวอักษร"
+                    required
+                    minLength={6}
+                    className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-xs text-[color:var(--text-primary)] focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2 flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setAuthMode(authMode === 'login' ? 'signup' : 'login');
+                      setAuthError('');
+                      setAuthSuccess('');
+                    }}
+                    className="text-xs text-blue-400 hover:underline font-medium"
+                  >
+                    {authMode === 'login' ? 'ยังไม่มีบัญชี? สมัครใช้งานคลิกที่นี่' : 'มีบัญชีอยู่แล้ว? เข้าสู่ระบบคลิกที่นี่'}
+                  </button>
+                  <Button 
+                    type="submit" 
+                    disabled={syncing}
+                    className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 border-none text-xs text-white px-6 shadow-md shadow-blue-500/25 flex items-center justify-center gap-1.5"
+                  >
+                    {authMode === 'login' ? <LogIn size={14} /> : <UserPlus size={14} />}
+                    {syncing ? 'กำลังประมวลผล...' : authMode === 'login' ? 'เข้าสู่ระบบ (Sign In)' : 'สมัครสมาชิก (Sign Up)'}
+                  </Button>
+                </div>
+              </form>
+            </div>
+          )}
+        </Card>
+
         {/* Currency Card */}
         <Card className="p-6 flex flex-col h-full">
           <div className="flex items-center gap-3 mb-6">
@@ -234,6 +510,139 @@ export const Settings = () => {
                 </button>
               );
             })}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Mimo AI Settings Card */}
+        <Card className="p-6 flex flex-col h-full">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+              <Cpu size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[color:var(--text-primary)]">ผู้ช่วยปัญญาประดิษฐ์ (Mimo AI)</h3>
+              <p className="text-xs text-[color:var(--text-secondary)]">เปิดใช้งานการบันทึกรายการด้วยเสียง/ข้อความและรับคำแนะนำทางการเงิน</p>
+            </div>
+          </div>
+          
+          <div className="space-y-4 flex-grow">
+            <div>
+              <label className="block text-xs font-bold text-[color:var(--text-secondary)] mb-1.5 flex items-center justify-between">
+                <span>Mimo API Key</span>
+                <a 
+                  href="https://xiaomimimo.com" 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-[10px] text-blue-400 hover:underline flex items-center gap-0.5"
+                >
+                  รับ API Key ของคุณ <Plus size={10} />
+                </a>
+              </label>
+              <div className="relative">
+                <input 
+                  type={showApiKey ? 'text' : 'password'} 
+                  value={mimoApiKey}
+                  onChange={(e) => setMimoApiKey(e.target.value)}
+                  placeholder="sk-xxxxx หรือ tp-xxxxx"
+                  className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-cyan-500 font-mono pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowApiKey(!showApiKey)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[color:var(--text-muted)] hover:text-[color:var(--text-primary)]"
+                >
+                  {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[color:var(--text-secondary)] mb-1.5">โมเดล AI (Mimo Model)</label>
+              <select
+                value={mimoModel}
+                onChange={(e) => setMimoModel(e.target.value)}
+                className="w-full bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] rounded-xl px-3 py-2.5 text-sm text-[color:var(--text-primary)] focus:outline-none focus:border-cyan-500"
+              >
+                <option value="mimo-v2.5-pro">mimo-v2.5-pro (แนะนำ - การคิดวิเคราะห์ขั้นสูง)</option>
+                <option value="mimo-v2.5">mimo-v2.5 (มาตรฐาน/รวดเร็ว)</option>
+                <option value="mimo-v2-omni">mimo-v2-omni (รอบด้าน/ความเร็วสูง)</option>
+              </select>
+            </div>
+            
+            <div className="p-3 bg-blue-500/5 rounded-xl border border-blue-500/10 text-xs text-[color:var(--text-secondary)] flex items-start gap-2">
+              <Info size={14} className="text-blue-400 shrink-0 mt-0.5" />
+              <p className="leading-relaxed">
+                ข้อมูล API Key จะถูกจัดเก็บไว้ในเบราว์เซอร์ของคุณอย่างปลอดภัย 100% และไม่มีการส่งไปยังเซิร์ฟเวอร์อื่นนอกจาก API ของ Mimo โดยตรง
+              </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* PWA Install Card */}
+        <Card className="p-6 flex flex-col h-full">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+              <Smartphone size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold text-[color:var(--text-primary)]">ติดตั้งแอปพลิเคชัน (PWA)</h3>
+              <p className="text-xs text-[color:var(--text-secondary)]">ติดตั้งแอปเพื่อความสะดวกรวดเร็วในชีวิตประจำวันและใช้งานแบบออฟไลน์</p>
+            </div>
+          </div>
+
+          <div className="space-y-4 flex-grow flex flex-col justify-between">
+            <div>
+              <p className="text-xs text-[color:var(--text-secondary)] leading-relaxed mb-4">
+                คุณสามารถติดตั้ง Money Nitro ลงบนหน้าจอหลักของสมาร์ทโฟนหรือบนคอมพิวเตอร์ของคุณได้โดยตรง เพื่อสลับใช้งานได้ทันที มีไอคอนแอปเฉพาะตัว และโหลดหน้าต่างรวดเร็วขึ้น
+              </p>
+              
+              {isInstallable ? (
+                <Button 
+                  onClick={handleInstallClick}
+                  className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white border-none py-3 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 animate-[pulse-glow_2s_infinite]"
+                >
+                  <Smartphone size={16} /> ติดตั้งแอปบนอุปกรณ์นี้
+                </Button>
+              ) : (
+                <div className="p-3 bg-slate-500/10 rounded-xl border border-slate-500/10 text-xs text-[color:var(--text-muted)] flex items-start gap-2">
+                  <CheckCircle2 size={14} className="text-emerald-400 shrink-0 mt-0.5" />
+                  <p>แอปติดตั้งบนอุปกรณ์ของคุณเรียบร้อยแล้ว หรือเบราว์เซอร์ของคุณไม่รองรับการตรวจจับการติดตั้งอัตโนมัติ (เช่น iOS Safari)</p>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[color:var(--border-color)] pt-4 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowGuide(!showGuide)}
+                className="text-xs font-bold text-blue-400 hover:underline flex items-center gap-1 justify-center w-full"
+              >
+                {showGuide ? 'ซ่อนคู่มือการติดตั้งด้วยตนเอง' : 'แสดงคู่มือการติดตั้งบน iOS / Android ด้วยตนเอง'}
+              </button>
+
+              {showGuide && (
+                <div className="mt-3 space-y-3 bg-[color:var(--bg-secondary)] p-3 rounded-xl border border-[color:var(--border-color)] text-xs animate-fade-in">
+                  <div>
+                    <h5 className="font-bold text-[color:var(--text-primary)] mb-1">📱 สำหรับ iOS (Safari เท่านั้น):</h5>
+                    <p className="text-[color:var(--text-secondary)] leading-relaxed pl-3">
+                      1. เปิดเว็บแอปนี้บน <strong>Safari</strong><br />
+                      2. กดปุ่ม <strong>แชร์ (Share)</strong> (ไอคอนรูปกล่องพร้อมลูกศรชี้ขึ้นที่แถบเมนูล่าง)<br />
+                      3. เลื่อนลงด้านล่างแล้วกดเลือก <strong>"เพิ่มไปยังหน้าจอโฮม" (Add to Home Screen)</strong>
+                    </p>
+                  </div>
+                  <div>
+                    <h5 className="font-bold text-[color:var(--text-primary)] mb-1">🤖 สำหรับ Android (Chrome):</h5>
+                    <p className="text-[color:var(--text-secondary)] leading-relaxed pl-3">
+                      1. เปิดเว็บแอปนี้บน <strong>Chrome</strong><br />
+                      2. กดปุ่ม <strong>จุดสามจุด (Menu)</strong> ที่มุมขวาบน<br />
+                      3. เลือก <strong>"ติดตั้งแอป" (Install App)</strong>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </Card>
       </div>

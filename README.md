@@ -1,4 +1,4 @@
-# Family Finance App
+# Money Nitro App
 
 แอปจัดการการเงินครอบครัวแบบ local-first สำหรับบันทึกรายรับ รายจ่าย งบประมาณ เป้าหมายการออม กระเป๋าเงิน และบิลประจำ ข้อมูลทั้งหมดเก็บใน browser `localStorage` ของผู้ใช้ พร้อม export/import backup ได้
 

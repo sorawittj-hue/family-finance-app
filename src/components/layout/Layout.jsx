@@ -1,7 +1,8 @@
-﻿import React from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
+import { AIAssistantBubble } from '../AIAssistantBubble';
 
 export const Layout = () => {
   return (
@@ -16,6 +17,7 @@ export const Layout = () => {
       </main>
 
       <BottomNav />
+      <AIAssistantBubble />
     </div>
   );
 };
