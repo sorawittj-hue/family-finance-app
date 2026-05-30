@@ -32,6 +32,26 @@ npm run dev
 
 เปิด `http://localhost:5173`
 
+## Supabase Cloud Sync
+
+The app now supports Supabase Auth, Postgres persistence, and Realtime sync across devices.
+
+1. Run the migration in `supabase/migrations/20260530013000_finance_cloud_sync.sql` against the Supabase project.
+2. Add these Vercel environment variables for Production, Preview, and Development:
+
+```bash
+VITE_SUPABASE_URL=https://byxxbkhjdfqsbocebkgj.supabase.co
+VITE_SUPABASE_ANON_KEY=<your public anon or publishable key>
+```
+
+3. Redeploy Vercel, then sign in from Settings on each device with the same Supabase Auth account.
+
+Security model:
+
+- Browser code only uses public Supabase config. Never expose a service role key.
+- All finance tables have RLS enabled and policies scoped to `auth.uid()`.
+- Local storage remains as an offline/cache fallback, then migrates to cloud after first sign-in if cloud data is empty.
+
 ## Quality Checks
 
 ```bash
@@ -56,10 +76,10 @@ npm audit --audit-level=moderate
 
 ## Security Notes
 
-- แอปนี้ไม่มี backend และไม่ส่งข้อมูลการเงินออกจากเครื่องโดยอัตโนมัติ
+- แอปใช้ local-first storage และสามารถ sync ผ่าน Supabase เมื่อผู้ใช้ sign in
 - `localStorage` ไม่เหมาะกับข้อมูลลับระดับรหัสผ่านหรือ token
 - ก่อน deploy production ควรเปิดใช้ HTTPS และตรวจ `npm audit` ให้ผ่าน
-- ถ้าต้องการ sync ข้ามเครื่อง ควรเพิ่ม backend/auth พร้อม rules ที่จำกัดสิทธิ์ต่อครอบครัวหรือบัญชีผู้ใช้
+- Supabase sync ต้องเปิด RLS และใช้เฉพาะ public anon/publishable key ใน browser เท่านั้น
 
 ## Project Structure
 

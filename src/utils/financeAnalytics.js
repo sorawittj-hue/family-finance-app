@@ -186,3 +186,83 @@ export const buildMonthlyFinanceReport = ({ transactions, wallets, budgets, recu
     insights: buildInsights({ income, expense, saving, netCashflow, projectedExpense, budgetUsage, debtRatio, runwayMonths }),
   };
 };
+
+export const buildWealthOperatingSystem = ({ transactions, wallets, budgets, goals, recurringTxs, monthKey = getMonthKey() }) => {
+  const report = buildMonthlyFinanceReport({ transactions, wallets, budgets, recurringTxs, monthKey });
+  const monthlyInvesting = transactions
+    .filter((transaction) => transaction.type === 'saving' && transaction.category === 'investment')
+    .reduce((sum, transaction) => sum + (Number(transaction.amount) || 0), 0);
+  const emergencyGoal = goals.find((goal) => /emergency|ฉุกเฉิน/i.test(goal.name || '') || goal.id?.includes('emergency'));
+  const emergencyTarget = emergencyGoal?.targetAmount || Math.max(report.expense * 6, 1);
+  const emergencyProgress = emergencyTarget > 0 ? ((emergencyGoal?.currentAmount || 0) / emergencyTarget) * 100 : 0;
+  const budgetLeaks = report.budgetUsage
+    .filter((budget) => budget.status !== 'ok')
+    .slice(0, 3)
+    .map((budget) => ({
+      title: `${budget.label} needs a guardrail`,
+      detail: budget.remaining < 0
+        ? `Overspent by ${Math.abs(budget.remaining).toFixed(0)} this month. Freeze non-essential spending here until next cycle.`
+        : `${budget.progress.toFixed(0)}% used. Put the next purchase in a 24-hour wait list.`,
+      impact: Math.max(Math.abs(budget.remaining), budget.limit * 0.1),
+    }));
+
+  const recurringExpense = recurringTxs
+    .filter((bill) => bill.type === 'expense')
+    .reduce((sum, bill) => sum + (Number(bill.amount) || 0), 0);
+  const targetSavingRate = report.income >= 50000 ? 25 : 15;
+  const currentSavingGap = report.income > 0
+    ? Math.max(0, (report.income * targetSavingRate / 100) - report.saving)
+    : 0;
+  const investableSurplus = Math.max(0, report.netCashflow - Math.max(currentSavingGap, 0));
+  const annualizedWealthVelocity = (report.saving + Math.max(0, investableSurplus)) * 12;
+  const runwayTarget = 6;
+  const runwayGap = Math.max(0, (report.expense * runwayTarget) - report.totalBalance);
+
+  const playbook = [
+    {
+      title: 'Pay yourself first',
+      metric: `${targetSavingRate}% saving target`,
+      detail: currentSavingGap > 0
+        ? `Move ${currentSavingGap.toFixed(0)} into savings before discretionary spending.`
+        : 'You are at or above the target saving lane. Keep automation on.',
+      tone: currentSavingGap > 0 ? 'warning' : 'success',
+    },
+    {
+      title: 'Build a 6-month runway',
+      metric: `${report.runwayMonths.toFixed(1)} months ready`,
+      detail: runwayGap > 0
+        ? `Emergency capital gap is ${runwayGap.toFixed(0)}. Fill this before taking bigger risk.`
+        : 'Emergency runway is strong enough to support more investing.',
+      tone: runwayGap > 0 ? 'warning' : 'success',
+    },
+    {
+      title: 'Kill silent subscriptions',
+      metric: `${recurringExpense.toFixed(0)} monthly recurring`,
+      detail: recurringExpense > report.income * 0.1
+        ? 'Recurring bills exceed 10% of income. Review every subscription this week.'
+        : 'Recurring bills are contained. Keep them visible.',
+      tone: recurringExpense > report.income * 0.1 ? 'danger' : 'success',
+    },
+    {
+      title: 'Increase wealth velocity',
+      metric: `${annualizedWealthVelocity.toFixed(0)} yearly engine`,
+      detail: monthlyInvesting > 0
+        ? 'Investment habit exists. Raise it when cashflow and runway are stable.'
+        : 'No investment contribution this month. Start a tiny recurring DCA line.',
+      tone: monthlyInvesting > 0 ? 'success' : 'warning',
+    },
+  ];
+
+  return {
+    report,
+    emergencyProgress: Math.min(100, emergencyProgress),
+    monthlyInvesting,
+    recurringExpense,
+    currentSavingGap,
+    investableSurplus,
+    annualizedWealthVelocity,
+    runwayGap,
+    budgetLeaks,
+    playbook,
+  };
+};

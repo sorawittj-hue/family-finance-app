@@ -2,6 +2,7 @@ import React, { useRef, useState, useMemo } from 'react';
 import { useFinance } from '../context/FinanceContext';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { CloudSyncPanel } from '../components/CloudSyncPanel';
 import { getCategory, CURRENCY_MAP, CATEGORIES, formatMoney } from '../utils/constants';
 import { 
   Download, Upload, ShieldAlert, CheckCircle2, Moon, Sun, 
@@ -173,6 +174,8 @@ export const Settings = () => {
           <p className="text-[color:var(--text-secondary)] text-sm mt-1">จัดการบัญชี สกุลเงิน ธีม และข้อมูลของคุณ</p>
         </div>
       </header>
+
+      <CloudSyncPanel />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         

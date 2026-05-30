@@ -1,5 +1,24 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { generateDemoData } from '../utils/demoData';
+import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from '../lib/supabaseClient';
+import {
+  FINANCE_REALTIME_TABLES,
+  deleteBudgetRow,
+  deleteGoalRow,
+  deleteRecurringTxRow,
+  deleteTransactionRows,
+  deleteWalletRow,
+  isCloudDatasetEmpty,
+  loadFinanceDataset,
+  replaceFullFinanceDataset,
+  saveFullFinanceDataset,
+  upsertBudget,
+  upsertGoal,
+  upsertPreferences,
+  upsertRecurringTx,
+  upsertTransaction,
+  upsertWallet,
+} from '../services/financeCloudStore';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -25,9 +44,9 @@ const STORAGE_KEYS = {
 };
 
 const DEFAULT_WALLETS = [
-  { id: 'wallet-cash', name: 'เงินสด', color: '#10b981', type: 'cash' },
-  { id: 'wallet-bank', name: 'บัญชีธนาคาร', color: '#3b82f6', type: 'bank' },
-  { id: 'wallet-ktc', name: 'บัตรเครดิต', color: '#f43f5e', type: 'credit' }
+  { id: 'wallet-cash', name: 'Cash', color: '#10b981', type: 'cash' },
+  { id: 'wallet-bank', name: 'Bank Account', color: '#3b82f6', type: 'bank' },
+  { id: 'wallet-credit', name: 'Credit Card', color: '#f43f5e', type: 'credit' },
 ];
 
 const loadData = (key, defaultValue) => {
@@ -48,6 +67,13 @@ const persistData = (key, value) => {
   }
 };
 
+const sortTransactions = (transactions) => (
+  [...transactions].sort((a, b) => {
+    if (a.date !== b.date) return String(b.date || '').localeCompare(String(a.date || ''));
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  })
+);
+
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
 const isPositiveAmount = (amount) => Number.isFinite(Number(amount)) && Number(amount) > 0;
@@ -63,72 +89,171 @@ export const useFinance = () => {
 };
 
 export const FinanceProvider = ({ children }) => {
-  // Wallets
   const [wallets, setWallets] = useState(() => loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS));
-  
-  // Theme state: dark, oled, light, nordic
-  const [theme, setTheme] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.THEME) || 'dark';
-    } catch {
-      return 'dark';
-    }
-  });
-
-  // Global Currency: THB, USD, EUR, JPY, GBP
-  const [currency, setCurrency] = useState(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEYS.CURRENCY) || 'THB';
-    } catch {
-      return 'THB';
-    }
-  });
-
-  // Recurring transactions state
+  const [theme, setThemeState] = useState(() => localStorage.getItem(STORAGE_KEYS.THEME) || 'dark');
+  const [currency, setCurrencyState] = useState(() => localStorage.getItem(STORAGE_KEYS.CURRENCY) || 'THB');
   const [recurringTxs, setRecurringTxs] = useState(() => loadData(STORAGE_KEYS.RECURRING, []));
-
-  // Transactions (Make sure they have walletId, migrate if missing)
   const [transactions, setTransactions] = useState(() => {
     const stored = loadData(STORAGE_KEYS.TRANSACTIONS, []);
-    const migrated = stored.map(tx => ({
+    return sortTransactions(stored.map((tx) => ({
       ...tx,
-      walletId: tx.walletId || (wallets[0]?.id || 'wallet-cash')
-    }));
-    return migrated.sort((a, b) => {
-      if (a.date !== b.date) return b.date.localeCompare(a.date);
-      return (b.timestamp || 0) - (a.timestamp || 0);
-    });
+      walletId: tx.walletId || 'wallet-cash',
+    })));
   });
-
   const [budgets, setBudgets] = useState(() => loadData(STORAGE_KEYS.BUDGETS, {}));
   const [goals, setGoals] = useState(() => loadData(STORAGE_KEYS.GOALS, []));
 
-  // Sync to localStorage
-  useEffect(() => {
-    persistData(STORAGE_KEYS.TRANSACTIONS, transactions);
-  }, [transactions]);
+  const [session, setSession] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(isSupabaseConfigured ? 'checking' : 'local');
+  const [syncError, setSyncError] = useState('');
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [isCloudLoading, setIsCloudLoading] = useState(false);
+
+  const realtimeReloadTimer = useRef(null);
+  const latestDatasetRef = useRef(null);
+  const user = session?.user || null;
+  const supabaseConfig = useMemo(() => getSupabaseConfigStatus(), []);
+
+  const buildLocalDataset = useCallback(() => ({
+    wallets,
+    transactions,
+    budgets,
+    goals,
+    recurringTxs,
+    theme,
+    currency,
+  }), [budgets, currency, goals, recurringTxs, theme, transactions, wallets]);
 
   useEffect(() => {
-    persistData(STORAGE_KEYS.BUDGETS, budgets);
-  }, [budgets]);
+    latestDatasetRef.current = buildLocalDataset();
+  }, [buildLocalDataset]);
+
+  const applyDataset = useCallback((dataset) => {
+    if (dataset.wallets) setWallets(dataset.wallets.length > 0 ? dataset.wallets : DEFAULT_WALLETS);
+    if (dataset.transactions) setTransactions(sortTransactions(dataset.transactions));
+    if (dataset.budgets) setBudgets(dataset.budgets);
+    if (dataset.goals) setGoals(dataset.goals);
+    if (dataset.recurringTxs) setRecurringTxs(dataset.recurringTxs);
+    if (dataset.theme) setThemeState(dataset.theme);
+    if (dataset.currency) setCurrencyState(dataset.currency);
+  }, []);
+
+  const runCloudOperation = useCallback((operation) => {
+    if (!supabase || !user?.id) return;
+    setSyncStatus('syncing');
+    setSyncError('');
+    operation()
+      .then(() => {
+        setSyncStatus('online');
+        setLastSyncedAt(new Date().toISOString());
+      })
+      .catch((error) => {
+        setSyncStatus('error');
+        setSyncError(error?.message || 'Cloud sync failed.');
+      });
+  }, [user?.id]);
+
+  const refreshFromCloud = useCallback(async ({ migrateIfEmpty = false } = {}) => {
+    if (!supabase || !user?.id) return;
+    setIsCloudLoading(true);
+    setSyncStatus('syncing');
+    setSyncError('');
+
+    try {
+      const cloudDataset = await loadFinanceDataset(supabase, user.id);
+      if (migrateIfEmpty && isCloudDatasetEmpty(cloudDataset)) {
+        const localDataset = latestDatasetRef.current || buildLocalDataset();
+        await saveFullFinanceDataset(supabase, user.id, localDataset);
+        setSyncStatus('online');
+        setLastSyncedAt(new Date().toISOString());
+        return;
+      }
+
+      applyDataset(cloudDataset);
+      setSyncStatus('online');
+      setLastSyncedAt(new Date().toISOString());
+    } catch (error) {
+      setSyncStatus('error');
+      setSyncError(error?.message || 'Failed to load cloud finance data.');
+    } finally {
+      setIsCloudLoading(false);
+    }
+  }, [applyDataset, buildLocalDataset, user?.id]);
 
   useEffect(() => {
-    persistData(STORAGE_KEYS.GOALS, goals);
-  }, [goals]);
+    if (!supabase) return undefined;
+
+    let isMounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!isMounted) return;
+      if (error) {
+        setSyncStatus('error');
+        setSyncError(error.message);
+        return;
+      }
+      setSession(data.session);
+      setSyncStatus(data.session ? 'syncing' : 'signed-out');
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession);
+      setSyncStatus(nextSession ? 'syncing' : 'signed-out');
+      if (!nextSession) {
+        setLastSyncedAt(null);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   useEffect(() => {
-    persistData(STORAGE_KEYS.WALLETS, wallets);
-  }, [wallets]);
+    if (!user?.id) return undefined;
+    refreshFromCloud({ migrateIfEmpty: true });
 
-  useEffect(() => {
-    persistData(STORAGE_KEYS.CURRENCY, currency);
-  }, [currency]);
+    const channel = supabase
+      .channel(`finance-sync-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: FINANCE_REALTIME_TABLES[0], filter: `user_id=eq.${user.id}` },
+        () => {
+          window.clearTimeout(realtimeReloadTimer.current);
+          realtimeReloadTimer.current = window.setTimeout(() => refreshFromCloud(), 350);
+        },
+      );
 
-  useEffect(() => {
-    persistData(STORAGE_KEYS.RECURRING, recurringTxs);
-  }, [recurringTxs]);
+    FINANCE_REALTIME_TABLES.slice(1).forEach((table) => {
+      channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table, filter: `user_id=eq.${user.id}` },
+        () => {
+          window.clearTimeout(realtimeReloadTimer.current);
+          realtimeReloadTimer.current = window.setTimeout(() => refreshFromCloud(), 350);
+        },
+      );
+    });
 
-  // Apply Theme class to document root
+    channel.subscribe((status) => {
+      if (status === 'SUBSCRIBED') {
+        setSyncStatus('online');
+      }
+    });
+
+    return () => {
+      window.clearTimeout(realtimeReloadTimer.current);
+      supabase.removeChannel(channel);
+    };
+  }, [refreshFromCloud, user?.id]);
+
+  useEffect(() => persistData(STORAGE_KEYS.TRANSACTIONS, transactions), [transactions]);
+  useEffect(() => persistData(STORAGE_KEYS.BUDGETS, budgets), [budgets]);
+  useEffect(() => persistData(STORAGE_KEYS.GOALS, goals), [goals]);
+  useEffect(() => persistData(STORAGE_KEYS.WALLETS, wallets), [wallets]);
+  useEffect(() => persistData(STORAGE_KEYS.CURRENCY, currency), [currency]);
+  useEffect(() => persistData(STORAGE_KEYS.RECURRING, recurringTxs), [recurringTxs]);
+
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove('theme-dark', 'theme-oled', 'theme-light', 'theme-nordic');
@@ -136,39 +261,73 @@ export const FinanceProvider = ({ children }) => {
     persistData(STORAGE_KEYS.THEME, theme);
   }, [theme]);
 
-  // Actions
+  const signInWithEmail = async (email, password) => {
+    if (!supabase) return { error: new Error('Supabase is not configured.') };
+    setSyncStatus('syncing');
+    const result = await supabase.auth.signInWithPassword({ email, password });
+    if (result.error) {
+      setSyncStatus('error');
+      setSyncError(result.error.message);
+    }
+    return result;
+  };
+
+  const signUpWithEmail = async (email, password) => {
+    if (!supabase) return { error: new Error('Supabase is not configured.') };
+    setSyncStatus('syncing');
+    const result = await supabase.auth.signUp({ email, password });
+    if (result.error) {
+      setSyncStatus('error');
+      setSyncError(result.error.message);
+    }
+    return result;
+  };
+
+  const signOut = async () => {
+    if (!supabase) return;
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      setSyncStatus('error');
+      setSyncError(error.message);
+    }
+  };
+
+  const setTheme = (nextTheme) => {
+    setThemeState(nextTheme);
+    runCloudOperation(() => upsertPreferences(supabase, user.id, { theme: nextTheme, currency }));
+  };
+
+  const setCurrency = (nextCurrency) => {
+    setCurrencyState(nextCurrency);
+    runCloudOperation(() => upsertPreferences(supabase, user.id, { theme, currency: nextCurrency }));
+  };
+
   const addTransaction = (tx) => {
     if (!tx?.type || !tx?.category || !tx?.date || !isPositiveAmount(tx.amount)) {
       console.warn('Rejected invalid transaction payload.', tx);
       return false;
     }
 
-    setTransactions((prev) => {
-      const newTx = { 
-        ...tx, 
-        id: generateUUID(), 
-        timestamp: Date.now(),
-        amount: Number(tx.amount),
-        walletId: tx.walletId || wallets[0]?.id || 'wallet-cash'
-      };
-      const updated = [newTx, ...prev].sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-      return updated;
-    });
-
+    const newTx = {
+      ...tx,
+      id: generateUUID(),
+      timestamp: Date.now(),
+      amount: Number(tx.amount),
+      walletId: tx.walletId || wallets[0]?.id || 'wallet-cash',
+    };
+    setTransactions((prev) => sortTransactions([newTx, ...prev]));
+    runCloudOperation(() => upsertTransaction(supabase, user.id, newTx));
     return true;
   };
 
   const deleteTransaction = (id) => {
+    let idsToDelete = [id];
     setTransactions((prev) => {
-      const txToDelete = prev.find(t => t.id === id);
-      if (txToDelete && txToDelete.linkedTxId) {
-        return prev.filter(t => t.id !== id && t.id !== txToDelete.linkedTxId);
-      }
-      return prev.filter((t) => t.id !== id);
+      const txToDelete = prev.find((transaction) => transaction.id === id);
+      if (txToDelete?.linkedTxId) idsToDelete = [id, txToDelete.linkedTxId];
+      return prev.filter((transaction) => !idsToDelete.includes(transaction.id));
     });
+    runCloudOperation(() => deleteTransactionRows(supabase, user.id, idsToDelete));
   };
 
   const updateTransaction = (id, updatedTx) => {
@@ -177,14 +336,13 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    setTransactions((prev) => {
-      const updated = prev.map((t) => (t.id === id ? { ...t, ...updatedTx, amount: Number(updatedTx.amount) } : t));
-      return updated.sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-    });
-
+    let nextTx = null;
+    setTransactions((prev) => sortTransactions(prev.map((transaction) => {
+      if (transaction.id !== id) return transaction;
+      nextTx = { ...transaction, ...updatedTx, amount: Number(updatedTx.amount), timestamp: transaction.timestamp || Date.now() };
+      return nextTx;
+    })));
+    if (nextTx) runCloudOperation(() => upsertTransaction(supabase, user.id, nextTx));
     return true;
   };
 
@@ -194,42 +352,39 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    setTransactions((prev) => {
-      const baseId = generateUUID();
-      const transferAmount = Number(amount);
-      const timestamp = Date.now();
-      const outTx = {
-        id: `out-${baseId}`,
-        type: 'expense',
-        category: 'transfer_out',
-        amount: transferAmount,
-        date,
-        note: note || 'โอนเงินระหว่างบัญชี',
-        walletId: fromWalletId,
-        isTransfer: true,
-        linkedTxId: `in-${baseId}`,
-        timestamp
-      };
-      const inTx = {
-        id: `in-${baseId}`,
-        type: 'income',
-        category: 'transfer_in',
-        amount: transferAmount,
-        date,
-        note: note || 'รับโอนเงินระหว่างบัญชี',
-        walletId: toWalletId,
-        isTransfer: true,
-        linkedTxId: `out-${baseId}`,
-        timestamp: timestamp + 1
-      };
-      
-      const updated = [outTx, inTx, ...prev].sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-      return updated;
-    });
+    const baseId = generateUUID();
+    const transferAmount = Number(amount);
+    const timestamp = Date.now();
+    const outTx = {
+      id: `out-${baseId}`,
+      type: 'expense',
+      category: 'transfer_out',
+      amount: transferAmount,
+      date,
+      note: note || 'Wallet transfer out',
+      walletId: fromWalletId,
+      isTransfer: true,
+      linkedTxId: `in-${baseId}`,
+      timestamp,
+    };
+    const inTx = {
+      id: `in-${baseId}`,
+      type: 'income',
+      category: 'transfer_in',
+      amount: transferAmount,
+      date,
+      note: note || 'Wallet transfer in',
+      walletId: toWalletId,
+      isTransfer: true,
+      linkedTxId: `out-${baseId}`,
+      timestamp: timestamp + 1,
+    };
 
+    setTransactions((prev) => sortTransactions([outTx, inTx, ...prev]));
+    runCloudOperation(async () => {
+      await upsertTransaction(supabase, user.id, outTx);
+      await upsertTransaction(supabase, user.id, inTx);
+    });
     return true;
   };
 
@@ -239,85 +394,111 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    setBudgets((prev) => ({ ...prev, [categoryId]: Number(amount) }));
+    const nextAmount = Number(amount);
+    setBudgets((prev) => ({ ...prev, [categoryId]: nextAmount }));
+    runCloudOperation(() => upsertBudget(supabase, user.id, categoryId, nextAmount));
     return true;
   };
 
   const deleteBudget = (categoryId) => {
-    if (!categoryId) {
-      console.warn('Rejected invalid budget delete payload.', { categoryId });
-      return false;
-    }
-
+    if (!categoryId) return false;
     setBudgets((prev) => {
       const next = { ...prev };
       delete next[categoryId];
       return next;
     });
+    runCloudOperation(() => deleteBudgetRow(supabase, user.id, categoryId));
     return true;
   };
 
-  // Advanced Budget Transfer
   const transferBudget = (fromCatId, toCatId, amount) => {
     setBudgets((prev) => {
+      const transferAmount = Number(amount) || 0;
       const fromLimit = prev[fromCatId] || 0;
       const toLimit = prev[toCatId] || 0;
-      if (fromLimit < amount) return prev;
-      return {
+      if (fromLimit < transferAmount) return prev;
+      const next = {
         ...prev,
-        [fromCatId]: Math.max(0, fromLimit - amount),
-        [toCatId]: toLimit + amount
+        [fromCatId]: Math.max(0, fromLimit - transferAmount),
+        [toCatId]: toLimit + transferAmount,
       };
+      runCloudOperation(async () => {
+        await upsertBudget(supabase, user.id, fromCatId, next[fromCatId]);
+        await upsertBudget(supabase, user.id, toCatId, next[toCatId]);
+      });
+      return next;
     });
   };
 
   const addGoal = (goal) => {
-    setGoals((prev) => [...prev, { 
-      ...goal, 
-      id: generateUUID(), 
-      currentAmount: goal.currentAmount || 0,
+    const newGoal = {
+      ...goal,
+      id: generateUUID(),
+      currentAmount: Number(goal.currentAmount) || 0,
+      targetAmount: Number(goal.targetAmount) || 0,
       targetDate: goal.targetDate || '',
-      icon: goal.icon || 'Target'
-    }]);
+      icon: goal.icon || 'Target',
+    };
+    setGoals((prev) => [...prev, newGoal]);
+    runCloudOperation(() => upsertGoal(supabase, user.id, newGoal));
   };
 
   const updateGoal = (id, newAmount) => {
-    setGoals((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, currentAmount: newAmount } : g))
-    );
+    let nextGoal = null;
+    setGoals((prev) => prev.map((goal) => {
+      if (goal.id !== id) return goal;
+      nextGoal = { ...goal, currentAmount: Number(newAmount) || 0 };
+      return nextGoal;
+    }));
+    if (nextGoal) runCloudOperation(() => upsertGoal(supabase, user.id, nextGoal));
   };
 
   const deleteGoal = (id) => {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
+    setGoals((prev) => prev.filter((goal) => goal.id !== id));
+    runCloudOperation(() => deleteGoalRow(supabase, user.id, id));
   };
 
-  // Wallet actions
   const addWallet = (wallet) => {
-    setWallets(prev => [...prev, { ...wallet, id: `wallet-${generateUUID()}` }]);
+    const newWallet = { ...wallet, id: `wallet-${generateUUID()}` };
+    setWallets((prev) => [...prev, newWallet]);
+    runCloudOperation(() => upsertWallet(supabase, user.id, newWallet));
   };
 
   const updateWallet = (id, updatedWallet) => {
-    setWallets(prev => prev.map(w => w.id === id ? { ...w, ...updatedWallet } : w));
+    let nextWallet = null;
+    setWallets((prev) => prev.map((wallet) => {
+      if (wallet.id !== id) return wallet;
+      nextWallet = { ...wallet, ...updatedWallet };
+      return nextWallet;
+    }));
+    if (nextWallet) runCloudOperation(() => upsertWallet(supabase, user.id, nextWallet));
   };
 
   const deleteWallet = (id) => {
-    setWallets(prev => prev.filter(w => w.id !== id));
-    // Set associated transactions to first wallet
-    setTransactions(prev => prev.map(tx => tx.walletId === id ? { ...tx, walletId: wallets.find(w => w.id !== id)?.id || 'wallet-cash' } : tx));
+    const fallbackWalletId = wallets.find((wallet) => wallet.id !== id)?.id || 'wallet-cash';
+    setWallets((prev) => prev.filter((wallet) => wallet.id !== id));
+    setTransactions((prev) => prev.map((tx) => (tx.walletId === id ? { ...tx, walletId: fallbackWalletId } : tx)));
+    runCloudOperation(async () => {
+      const affected = transactions.filter((tx) => tx.walletId === id).map((tx) => ({ ...tx, walletId: fallbackWalletId }));
+      await Promise.all(affected.map((tx) => upsertTransaction(supabase, user.id, tx)));
+      await deleteWalletRow(supabase, user.id, id);
+    });
   };
 
-  // Recurring Bill Actions
   const addRecurringTx = (bill) => {
     const dueDay = Math.min(31, Math.max(1, Number(bill.dueDay) || 1));
-    setRecurringTxs(prev => [...prev, { ...bill, dueDay, id: `rec-${generateUUID()}`, lastTriggered: '' }]);
+    const newBill = { ...bill, dueDay, id: `rec-${generateUUID()}`, lastTriggered: '' };
+    setRecurringTxs((prev) => [...prev, newBill]);
+    runCloudOperation(() => upsertRecurringTx(supabase, user.id, newBill));
   };
 
   const deleteRecurringTx = (id) => {
-    setRecurringTxs(prev => prev.filter(r => r.id !== id));
+    setRecurringTxs((prev) => prev.filter((bill) => bill.id !== id));
+    runCloudOperation(() => deleteRecurringTxRow(supabase, user.id, id));
   };
 
   const triggerRecurringTx = (id, walletId) => {
-    const bill = recurringTxs.find(r => r.id === id);
+    const bill = recurringTxs.find((item) => item.id === id);
     if (!bill) return;
 
     addTransaction({
@@ -325,45 +506,45 @@ export const FinanceProvider = ({ children }) => {
       category: bill.category,
       amount: bill.amount,
       date: new Date().toISOString().split('T')[0],
-      note: `ชำระรอบบิลอัตโนมัติ: ${bill.name}`,
-      walletId: walletId || bill.walletId || wallets[0]?.id || 'wallet-cash'
+      note: `Recurring payment: ${bill.name}`,
+      walletId: walletId || bill.walletId || wallets[0]?.id || 'wallet-cash',
     });
 
-    setRecurringTxs(prev => prev.map(r => {
-      if (r.id === id) {
-        return { ...r, lastTriggered: new Date().toISOString().split('T')[0] };
-      }
-      return r;
-    }));
+    const triggeredBill = { ...bill, lastTriggered: new Date().toISOString().split('T')[0] };
+    setRecurringTxs((prev) => prev.map((item) => (item.id === id ? triggeredBill : item)));
+    runCloudOperation(() => upsertRecurringTx(supabase, user.id, triggeredBill));
   };
 
-  // Load Demo Data
   const loadDemoData = () => {
     const demo = generateDemoData();
+    const demoRecurring = [
+      { id: 'rec-demo-netflix', name: 'Netflix Premium', type: 'expense', category: 'shopping', amount: 419, walletId: 'wallet-ktc', interval: 'monthly', dueDay: 7, lastTriggered: '' },
+      { id: 'rec-demo-electric', name: 'Home utilities', type: 'expense', category: 'home', amount: 2850, walletId: 'wallet-scb', interval: 'monthly', dueDay: 18, lastTriggered: '' },
+      { id: 'rec-demo-dividend', name: 'Monthly dividend', type: 'income', category: 'dividend', amount: 3500, walletId: 'wallet-kbank', interval: 'monthly', dueDay: 28, lastTriggered: '' },
+    ];
+    const nextDataset = { ...demo, recurringTxs: demoRecurring, theme, currency };
     setWallets(demo.wallets);
     setBudgets(demo.budgets);
     setGoals(demo.goals);
     setTransactions(demo.transactions);
-    
-    // Add default recurring bills for demo
-    setRecurringTxs([
-      { id: 'rec-demo-netflix', name: 'บิลรายเดือน Netflix Premium', type: 'expense', category: 'shopping', amount: 419, walletId: 'wallet-ktc', interval: 'monthly', dueDay: 7, lastTriggered: '' },
-      { id: 'rec-demo-electric', name: 'ค่าไฟฟ้าน้ำประปาบ้าน', type: 'expense', category: 'home', amount: 2850, walletId: 'wallet-scb', interval: 'monthly', dueDay: 18, lastTriggered: '' },
-      { id: 'rec-demo-salary', name: 'เงินปันผลรายเดือนจากพอร์ตหุ้น', type: 'income', category: 'dividend', amount: 3500, walletId: 'wallet-kbank', interval: 'monthly', dueDay: 28, lastTriggered: '' }
-    ]);
+    setRecurringTxs(demoRecurring);
+    runCloudOperation(() => replaceFullFinanceDataset(supabase, user.id, nextDataset));
   };
 
   const resetAllData = () => {
-    setTransactions([]);
-    setBudgets({});
-    setGoals([]);
-    setWallets(DEFAULT_WALLETS);
-    setTheme('dark');
-    setCurrency('THB');
-    setRecurringTxs([]);
+    const emptyDataset = {
+      transactions: [],
+      budgets: {},
+      goals: [],
+      wallets: DEFAULT_WALLETS,
+      theme: 'dark',
+      currency: 'THB',
+      recurringTxs: [],
+    };
+    applyDataset(emptyDataset);
+    runCloudOperation(() => replaceFullFinanceDataset(supabase, user.id, emptyDataset));
   };
 
-  // Full backup/restore
   const exportData = () => {
     const data = { transactions, budgets, goals, wallets, theme, currency, recurringTxs };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -378,29 +559,24 @@ export const FinanceProvider = ({ children }) => {
   const importData = (jsonData) => {
     try {
       const parsed = JSON.parse(jsonData);
-      if (!isPlainObject(parsed)) {
-        console.warn('Import file is not a valid finance backup object.');
-        return false;
-      }
-
+      if (!isPlainObject(parsed)) return false;
       if (parsed.wallets !== undefined && !Array.isArray(parsed.wallets)) return false;
       if (parsed.recurringTxs !== undefined && !Array.isArray(parsed.recurringTxs)) return false;
       if (parsed.transactions !== undefined && !Array.isArray(parsed.transactions)) return false;
       if (parsed.goals !== undefined && !Array.isArray(parsed.goals)) return false;
       if (parsed.budgets !== undefined && !isPlainObject(parsed.budgets)) return false;
 
-      if (parsed.wallets) setWallets(parsed.wallets);
-      if (parsed.theme) setTheme(parsed.theme);
-      if (parsed.currency) setCurrency(parsed.currency);
-      if (parsed.recurringTxs) setRecurringTxs(parsed.recurringTxs);
-      if (parsed.transactions) {
-        setTransactions(parsed.transactions.sort((a, b) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          return (b.timestamp || 0) - (a.timestamp || 0);
-        }));
-      }
-      if (parsed.budgets) setBudgets(parsed.budgets);
-      if (parsed.goals) setGoals(parsed.goals);
+      const nextDataset = {
+        wallets: parsed.wallets || wallets,
+        theme: parsed.theme || theme,
+        currency: parsed.currency || currency,
+        recurringTxs: parsed.recurringTxs || recurringTxs,
+        transactions: parsed.transactions ? sortTransactions(parsed.transactions) : transactions,
+        budgets: parsed.budgets || budgets,
+        goals: parsed.goals || goals,
+      };
+      applyDataset(nextDataset);
+      runCloudOperation(() => replaceFullFinanceDataset(supabase, user.id, nextDataset));
       return true;
     } catch (error) {
       console.error('Import failed', error);
@@ -438,6 +614,22 @@ export const FinanceProvider = ({ children }) => {
     resetAllData,
     exportData,
     importData,
+    cloud: {
+      user,
+      session,
+      isConfigured: supabaseConfig.isConfigured,
+      missingKeys: supabaseConfig.missingKeys,
+      url: supabaseConfig.url,
+      isAuthenticated: Boolean(user),
+      status: syncStatus,
+      error: syncError,
+      lastSyncedAt,
+      isLoading: isCloudLoading,
+      signInWithEmail,
+      signUpWithEmail,
+      signOut,
+      refresh: () => refreshFromCloud({ migrateIfEmpty: true }),
+    },
   };
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
