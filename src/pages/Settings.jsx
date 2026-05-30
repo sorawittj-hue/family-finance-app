@@ -48,7 +48,8 @@ export const Settings = () => {
     login,
     signUp,
     logout,
-    syncLocalDataToCloud
+    syncLocalDataToCloud,
+    refreshFromCloud
   } = useFinance();
   
   const fileInputRef = useRef(null);
@@ -134,6 +135,18 @@ export const Settings = () => {
       setTimeout(() => setSyncStatusMsg(null), 4000);
     } else {
       setSyncStatusMsg({ type: 'error', text: res.error || 'เกิดข้อผิดพลาดในการซิงก์ข้อมูล' });
+      setTimeout(() => setSyncStatusMsg(null), 4000);
+    }
+  };
+
+  const handleRefreshClick = async () => {
+    setSyncStatusMsg({ type: 'info', text: 'กำลังโหลดข้อมูลล่าสุดจากคลาวด์...' });
+    const res = await refreshFromCloud();
+    if (res.success) {
+      setSyncStatusMsg({ type: 'success', text: 'โหลดข้อมูลล่าสุดจากคลาวด์สำเร็จแล้ว!' });
+      setTimeout(() => setSyncStatusMsg(null), 3000);
+    } else {
+      setSyncStatusMsg({ type: 'error', text: res.error || 'ไม่สามารถโหลดข้อมูลจากคลาวด์ได้' });
       setTimeout(() => setSyncStatusMsg(null), 4000);
     }
   };
@@ -330,7 +343,17 @@ export const Settings = () => {
                   <p className="text-[10px] text-[color:var(--text-muted)] font-medium">เข้าสู่ระบบด้วยบัญชี</p>
                   <p className="text-sm font-bold text-[color:var(--text-primary)] mt-0.5">{user.email}</p>
                 </div>
-                <div className="flex gap-2">
+              <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRefreshClick}
+                    disabled={syncing || !isOnline}
+                    title="โหลดข้อมูลล่าสุดจากคลาวด์"
+                    className="flex items-center gap-1.5 text-xs text-blue-400 hover:bg-blue-500/10"
+                  >
+                    <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} /> รีเฟรชจากคลาวด์
+                  </Button>
                   <Button 
                     variant="ghost" 
                     size="sm" 

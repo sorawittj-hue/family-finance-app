@@ -419,7 +419,7 @@ export const FinanceProvider = ({ children }) => {
     persistData(STORAGE_KEYS.THEME, theme, null);
   }, [theme]);
 
-  // Supabase Realtime Subscriptions
+  // Realtime Subscriptions
   useEffect(() => {
     if (!user) return;
 
@@ -427,8 +427,11 @@ export const FinanceProvider = ({ children }) => {
       .channel(`sync-changes-${user.id}`)
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'wallets' },
         (payload) => {
+          // Only process rows belonging to this user
+          const rowUserId = payload.new?.user_id || payload.old?.user_id;
+          if (rowUserId !== user.id) return;
           if (payload.eventType === 'INSERT') {
             const newWallet = mapDbToWallet(payload.new);
             setWallets(prev => {
@@ -446,8 +449,10 @@ export const FinanceProvider = ({ children }) => {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'transactions' },
         (payload) => {
+          const rowUserId = payload.new?.user_id || payload.old?.user_id;
+          if (rowUserId !== user.id) return;
           if (payload.eventType === 'INSERT') {
             const newTx = mapDbToTx(payload.new);
             setTransactions(prev => {
@@ -475,8 +480,10 @@ export const FinanceProvider = ({ children }) => {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'budgets', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'budgets' },
         (payload) => {
+          const rowUserId = payload.new?.user_id || payload.old?.user_id;
+          if (rowUserId !== user.id) return;
           if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
             const catId = payload.new.category_id;
             const amount = Number(payload.new.amount);
@@ -493,8 +500,10 @@ export const FinanceProvider = ({ children }) => {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'goals', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'goals' },
         (payload) => {
+          const rowUserId = payload.new?.user_id || payload.old?.user_id;
+          if (rowUserId !== user.id) return;
           if (payload.eventType === 'INSERT') {
             const newGoal = mapDbToGoal(payload.new);
             setGoals(prev => {
@@ -512,8 +521,10 @@ export const FinanceProvider = ({ children }) => {
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'recurring_txs', filter: `user_id=eq.${user.id}` },
+        { event: '*', schema: 'public', table: 'recurring_txs' },
         (payload) => {
+          const rowUserId = payload.new?.user_id || payload.old?.user_id;
+          if (rowUserId !== user.id) return;
           if (payload.eventType === 'INSERT') {
             const newRec = mapDbToRecurring(payload.new);
             setRecurringTxs(prev => {
@@ -529,12 +540,36 @@ export const FinanceProvider = ({ children }) => {
           }
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Realtime] Connected — listening for cross-device changes');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('[Realtime] Channel error:', err);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[Realtime] Subscription timed out');
+        } else {
+          console.log('[Realtime] Status:', status);
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [user]);
+
+  // Manual refresh from cloud (pull latest data)
+  const refreshFromCloud = useCallback(async () => {
+    if (!user || !isOnline) return { success: false, error: 'ไม่ได้เชื่อมต่อ' };
+    setSyncing(true);
+    try {
+      await fetchCloudData(user.id);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    } finally {
+      setSyncing(false);
+    }
+  }, [user, isOnline, fetchCloudData]);
 
 
 
@@ -1293,7 +1328,8 @@ export const FinanceProvider = ({ children }) => {
     login,
     signUp,
     logout,
-    syncLocalDataToCloud
+    syncLocalDataToCloud,
+    refreshFromCloud
   };
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
