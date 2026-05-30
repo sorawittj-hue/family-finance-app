@@ -2,6 +2,21 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { generateDemoData } from '../utils/demoData';
 import { supabase, supabaseAvailable } from '../utils/supabaseClient';
 
+const DEVICE_ID_KEY = 'family_finance_device_id';
+
+const getOrCreateDeviceId = () => {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : `dev-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(DEVICE_ID_KEY, id);
+    }
+    return id;
+  } catch {
+    return `dev-${Date.now()}`;
+  }
+};
+
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -342,75 +357,79 @@ export const FinanceProvider = ({ children }) => {
     };
   }, []);
 
-  // Supabase Auth listener
+  // Auto-sync with Supabase — no login required
+  // Uses anonymous auth or device ID for single-user setup
   useEffect(() => {
     let active = true;
-    let lastUserId = null;
 
-    // Skip Supabase auth when the API key is invalid/truncated
     if (!supabaseAvailable) {
-      setSyncError('Supabase API key ไม่ถูกต้อง — ใช้โหมด localStorage เท่านั้น');
+      // No valid Supabase key — pure localStorage mode, works perfectly
       setSyncing(false);
       return () => { active = false; };
     }
 
-    setSyncing(true);
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      if (!active) return;
-      const currentUser = session?.user ?? null;
-      setUser(currentUser);
-      if (currentUser) {
-        lastUserId = currentUser.id;
-        await loadUserStates(currentUser);
-      } else {
+    // Try to get existing session or sign in anonymously
+    (async () => {
+      try {
+        // Check for existing session first
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (!active) return;
+        
+        if (session?.user) {
+          // Already have a session — use it
+          setUser(session.user);
+          try {
+            await loadUserStates(session.user);
+          } catch (err) {
+            console.warn('[Sync] Cloud fetch failed, using local data:', err.message);
+          }
+        } else {
+          // No session — sign in anonymously (no user interaction needed)
+          const { data, error } = await supabase.auth.signInAnonymously();
+          if (!active) return;
+          
+          if (error) {
+            console.warn('[Auth] Anonymous sign-in failed:', error.message);
+            setSyncError('ซิงก์ cloud ไม่ได้ — ใช้ข้อมูลในเครื่อง');
+            setSyncing(false);
+            return;
+          }
+          
+          if (data?.user) {
+            setUser(data.user);
+            try {
+              await loadUserStates(data.user);
+            } catch (err) {
+              console.warn('[Sync] Cloud fetch failed after auth:', err.message);
+            }
+          }
+        }
+      } catch (err) {
+        if (!active) return;
+        console.warn('[Auth] Auto-sync setup failed:', err.message);
+        setSyncError('เชื่อมต่อ Supabase ไม่ได้ — ใช้ข้อมูลในเครื่อง');
         setSyncing(false);
       }
-    }).catch((err) => {
-      if (!active) return;
-      console.warn('[Auth] getSession failed, running in local mode:', err.message);
-      setSyncError('ไม่สามารถเชื่อมต่อ Supabase ได้ — ใช้ข้อมูลในเครื่อง');
-      setSyncing(false);
-    });
+    })();
 
+    // Listen for auth state changes (token refresh, etc.)
     let subscription = null;
     try {
       const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (!active) return;
-        const currentUser = session?.user ?? null;
-
-        // Avoid duplicate loads for INITIAL_SESSION/TOKEN_REFRESHED with same user
-        if (
-          currentUser &&
-          lastUserId === currentUser.id &&
-          (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
-        ) {
-          setUser(currentUser);
+        if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          // Just update user, don't re-fetch
+          if (session?.user) setUser(session.user);
           return;
         }
-
-        setSyncing(true);
-        setUser(currentUser);
-
-        if (currentUser) {
-          lastUserId = currentUser.id;
-          await loadUserStates(currentUser);
-        } else {
-          lastUserId = null;
-          // Reset to local storage data
-          setWallets(loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null));
-          setTransactions(loadData(STORAGE_KEYS.TRANSACTIONS, [], null));
-          setBudgets(loadData(STORAGE_KEYS.BUDGETS, {}, null));
-          setGoals(loadData(STORAGE_KEYS.GOALS, [], null));
-          setRecurringTxs(loadData(STORAGE_KEYS.RECURRING, [], null));
-          setSyncing(false);
+        if (session?.user) {
+          setUser(session.user);
         }
       });
       subscription = data?.subscription ?? null;
     } catch (err) {
-      if (!active) return;
-      console.warn('[Auth] onAuthStateChange failed:', err.message);
-      setSyncError('ไม่สามารถเชื่อมต่อ Supabase ได้ — ใช้ข้อมูลในเครื่อง');
-      setSyncing(false);
+      console.warn('[Auth] onAuthStateChange setup failed:', err.message);
     }
 
     return () => {
