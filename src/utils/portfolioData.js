@@ -1,5 +1,6 @@
 // Portfolio utility functions for investment tracking
 // Uses CoinGecko free API for crypto and a CORS proxy for stock prices
+import { supabase, supabaseAvailable } from './supabaseClient';
 
 const STORAGE_KEY = 'family_finance_portfolio';
 
@@ -50,7 +51,7 @@ export const formatNumber = (value, decimals = 2) => {
   }).format(value);
 };
 
-// Load holdings from localStorage
+// Load holdings from localStorage (sync, for initial render)
 export const loadHoldings = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -61,15 +62,71 @@ export const loadHoldings = () => {
   } catch (e) {
     console.warn('Failed to load portfolio holdings:', e);
   }
-  return []; // Return empty array, not DEFAULT_HOLDINGS
+  return [];
 };
 
-// Save holdings to localStorage
+// Load holdings from Supabase (async)
+export const loadHoldingsFromCloud = async () => {
+  if (!supabaseAvailable) return null;
+  try {
+    const { data, error } = await supabase.from('portfolio').select('*').order('symbol');
+    if (error) throw error;
+    if (data && data.length > 0) {
+      const holdings = data.map(h => ({
+        id: h.id,
+        symbol: h.symbol,
+        name: h.name,
+        category: h.category,
+        shares: Number(h.shares),
+        avgCost: Number(h.avg_cost),
+      }));
+      // Also save to localStorage as cache
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(holdings));
+      return holdings;
+    }
+  } catch (e) {
+    console.warn('[Portfolio] Cloud load failed:', e.message);
+  }
+  return null;
+};
+
+// Save holdings to localStorage + Supabase
 export const saveHoldings = (holdings) => {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(holdings));
   } catch (e) {
     console.error('Failed to save portfolio holdings:', e);
+  }
+  // Background sync to Supabase
+  if (supabaseAvailable) {
+    syncHoldingsToCloud(holdings);
+  }
+};
+
+const syncHoldingsToCloud = async (holdings) => {
+  try {
+    // Delete all existing
+    const { data: existing } = await supabase.from('portfolio').select('id');
+    if (existing) {
+      for (const item of existing) {
+        await supabase.from('portfolio').delete().eq('id', item.id);
+      }
+    }
+    // Insert new
+    if (holdings.length > 0) {
+      const rows = holdings.map(h => ({
+        id: h.id,
+        symbol: h.symbol,
+        name: h.name,
+        category: h.category,
+        shares: h.shares,
+        avg_cost: h.avgCost,
+      }));
+      const { error } = await supabase.from('portfolio').insert(rows);
+      if (error) throw error;
+    }
+  } catch (e) {
+    console.warn('[Portfolio] Cloud sync failed:', e.message);
   }
 };
 

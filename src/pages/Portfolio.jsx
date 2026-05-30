@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
 import {
-  loadHoldings, saveHoldings, fetchCryptoPrices, fetchStockPrices,
+  loadHoldings, loadHoldingsFromCloud, saveHoldings, fetchCryptoPrices, fetchStockPrices,
   calculatePortfolioStats, calculateAllocation,
   formatUSD, formatPercent, formatNumber, CATEGORY_COLORS, DEFAULT_HOLDINGS
 } from '../utils/portfolioData';
@@ -123,7 +123,14 @@ export const Portfolio = () => {
   const [modal, setModal] = useState(null); // null | 'add' | holding object
   const chartSize = useChartSize(250);
 
-  // Save holdings to localStorage whenever they change
+  // Load from cloud on mount
+  useEffect(() => {
+    loadHoldingsFromCloud().then(cloudData => {
+      if (cloudData) setHoldings(cloudData);
+    });
+  }, []);
+
+  // Save holdings to localStorage + cloud whenever they change
   useEffect(() => {
     saveHoldings(holdings);
   }, [holdings]);
