@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, LineChart, List, Target, PieChart, Settings, Rocket } from 'lucide-react';
+import { LayoutDashboard, LineChart, List, Target, PieChart, Settings, Rocket, TrendingUp } from 'lucide-react';
 import { cn } from '../../utils/cn';
 import { useFinance } from '../../context/FinanceContext';
 
@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { path: '/budgets', label: 'งบประมาณรายเดือน', icon: PieChart },
   { path: '/goals', label: 'เป้าหมายการออม', icon: Target },
   { path: '/reports', label: 'รายงานสุขภาพการเงิน', icon: LineChart },
+  { path: '/portfolio', label: 'พอร์ตลงทุน', icon: TrendingUp },
   { path: '/wealth', label: 'Wealth Coach', icon: Rocket },
   { path: '/settings', label: 'ตั้งค่าระบบ', icon: Settings },
 ];
@@ -58,6 +59,7 @@ export const Sidebar = () => {
             <NavLink
               key={item.path}
               to={item.path}
+              end={item.path === '/'}
               className={({ isActive }) =>
                 cn(
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
@@ -90,7 +92,7 @@ export const Sidebar = () => {
 
       <div className="p-6">
         <div className="bg-[color:var(--bg-primary)] rounded-xl p-4 border border-[color:var(--border-color)]">
-          <p className="text-xs text-[color:var(--text-secondary)] font-medium">เวอร์ชัน 2.0.0</p>
+          <p className="text-xs text-[color:var(--text-secondary)] font-medium">เวอร์ชัน 2.1.0</p>
           <p className="text-[10px] text-[color:var(--text-muted)] mt-1">อัปเดตล่าสุด: วันนี้</p>
         </div>
       </div>

@@ -11,10 +11,26 @@ const Goals = lazy(() => import('./pages/Goals').then((module) => ({ default: mo
 const Reports = lazy(() => import('./pages/Reports').then((module) => ({ default: module.Reports })));
 const WealthCoach = lazy(() => import('./pages/WealthCoach').then((module) => ({ default: module.WealthCoach })));
 const Settings = lazy(() => import('./pages/Settings').then((module) => ({ default: module.Settings })));
+const Portfolio = lazy(() => import('./pages/Portfolio').then((module) => ({ default: module.Portfolio })));
+
+// Loading skeleton component
+const SkeletonPulse = ({ className }) => (
+  <div className={`animate-pulse bg-white/[0.06] rounded-xl ${className}`} />
+);
 
 const PageLoader = () => (
-  <div className="min-h-[40vh] flex items-center justify-center text-sm font-medium text-[color:var(--text-secondary)]">
-    กำลังโหลดข้อมูล...
+  <div className="space-y-6 py-4">
+    <SkeletonPulse className="h-8 w-48" />
+    <SkeletonPulse className="h-4 w-72" />
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+      <SkeletonPulse className="h-28" />
+      <SkeletonPulse className="h-28" />
+      <SkeletonPulse className="h-28" />
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <SkeletonPulse className="h-64" />
+      <SkeletonPulse className="h-64" />
+    </div>
   </div>
 );
 
@@ -31,6 +47,7 @@ export default function App() {
                 <Route path="budgets" element={<Budgets />} />
                 <Route path="goals" element={<Goals />} />
                 <Route path="reports" element={<Reports />} />
+                <Route path="portfolio" element={<Portfolio />} />
                 <Route path="wealth" element={<WealthCoach />} />
                 <Route path="settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />

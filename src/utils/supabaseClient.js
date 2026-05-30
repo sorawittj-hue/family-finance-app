@@ -1,7 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://byxxbkhjdfqsbocebkgj.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5eHhia2hqZGZxc2JvY2Via2dqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAxMjMzNzIsImV4cCI6MjA5NTY5OTM3Mn0.jdJcvq3RAgWslLPb78XKx78tdksjknEbId-lmxb2mb4';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbG...2mb4';
+
+// Validate API key — a real Supabase anon key is a JWT > 100 chars
+const isKeyValid = SUPABASE_ANON_KEY && SUPABASE_ANON_KEY.length > 100 && SUPABASE_ANON_KEY.startsWith('eyJ');
+export const supabaseAvailable = isKeyValid;
+
+if (!supabaseAvailable) {
+  console.warn(
+    '[Supabase] API key is missing or truncated. The app will run in localStorage-only mode. ' +
+    'Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables to enable cloud sync.'
+  );
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {

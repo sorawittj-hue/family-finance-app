@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { generateDemoData } from '../utils/demoData';
-import { supabase } from '../utils/supabaseClient';
+import { supabase, supabaseAvailable } from '../utils/supabaseClient';
 
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
@@ -347,6 +347,13 @@ export const FinanceProvider = ({ children }) => {
     let active = true;
     let lastUserId = null;
 
+    // Skip Supabase auth when the API key is invalid/truncated
+    if (!supabaseAvailable) {
+      setSyncError('Supabase API key ไม่ถูกต้อง — ใช้โหมด localStorage เท่านั้น');
+      setSyncing(false);
+      return () => { active = false; };
+    }
+
     setSyncing(true);
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!active) return;
@@ -358,43 +365,57 @@ export const FinanceProvider = ({ children }) => {
       } else {
         setSyncing(false);
       }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    }).catch((err) => {
       if (!active) return;
-      const currentUser = session?.user ?? null;
-
-      // Avoid duplicate loads for INITIAL_SESSION/TOKEN_REFRESHED with same user
-      if (
-        currentUser &&
-        lastUserId === currentUser.id &&
-        (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
-      ) {
-        setUser(currentUser);
-        return;
-      }
-
-      setSyncing(true);
-      setUser(currentUser);
-
-      if (currentUser) {
-        lastUserId = currentUser.id;
-        await loadUserStates(currentUser);
-      } else {
-        lastUserId = null;
-        // Reset to local storage data
-        setWallets(loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null));
-        setTransactions(loadData(STORAGE_KEYS.TRANSACTIONS, [], null));
-        setBudgets(loadData(STORAGE_KEYS.BUDGETS, {}, null));
-        setGoals(loadData(STORAGE_KEYS.GOALS, [], null));
-        setRecurringTxs(loadData(STORAGE_KEYS.RECURRING, [], null));
-        setSyncing(false);
-      }
+      console.warn('[Auth] getSession failed, running in local mode:', err.message);
+      setSyncError('ไม่สามารถเชื่อมต่อ Supabase ได้ — ใช้ข้อมูลในเครื่อง');
+      setSyncing(false);
     });
+
+    let subscription = null;
+    try {
+      const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!active) return;
+        const currentUser = session?.user ?? null;
+
+        // Avoid duplicate loads for INITIAL_SESSION/TOKEN_REFRESHED with same user
+        if (
+          currentUser &&
+          lastUserId === currentUser.id &&
+          (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION')
+        ) {
+          setUser(currentUser);
+          return;
+        }
+
+        setSyncing(true);
+        setUser(currentUser);
+
+        if (currentUser) {
+          lastUserId = currentUser.id;
+          await loadUserStates(currentUser);
+        } else {
+          lastUserId = null;
+          // Reset to local storage data
+          setWallets(loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null));
+          setTransactions(loadData(STORAGE_KEYS.TRANSACTIONS, [], null));
+          setBudgets(loadData(STORAGE_KEYS.BUDGETS, {}, null));
+          setGoals(loadData(STORAGE_KEYS.GOALS, [], null));
+          setRecurringTxs(loadData(STORAGE_KEYS.RECURRING, [], null));
+          setSyncing(false);
+        }
+      });
+      subscription = data?.subscription ?? null;
+    } catch (err) {
+      if (!active) return;
+      console.warn('[Auth] onAuthStateChange failed:', err.message);
+      setSyncError('ไม่สามารถเชื่อมต่อ Supabase ได้ — ใช้ข้อมูลในเครื่อง');
+      setSyncing(false);
+    }
 
     return () => {
       active = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe?.();
     };
   }, [loadUserStates]);
 
@@ -455,14 +476,16 @@ export const FinanceProvider = ({ children }) => {
 
   // Realtime Subscriptions
   useEffect(() => {
-    if (!user) {
+    if (!user || !supabaseAvailable) {
       setRealtimeStatus('DISCONNECTED');
       return;
     }
 
     setRealtimeStatus('CONNECTING');
+    let channel;
 
-    const channel = supabase
+    try {
+    channel = supabase
       .channel(`sync-changes-${user.id}`)
       .on(
         'postgres_changes',
@@ -595,8 +618,14 @@ export const FinanceProvider = ({ children }) => {
         }
       });
 
+    } catch (err) {
+      console.warn('[Realtime] Failed to set up realtime subscriptions:', err.message);
+      setRealtimeStatus('CHANNEL_ERROR');
+      reportCloudError('Realtime setup failed', err);
+    }
+
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) supabase.removeChannel(channel);
       setRealtimeStatus('DISCONNECTED');
     };
   }, [user, reportCloudError]);
