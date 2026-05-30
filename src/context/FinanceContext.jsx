@@ -419,6 +419,123 @@ export const FinanceProvider = ({ children }) => {
     persistData(STORAGE_KEYS.THEME, theme, null);
   }, [theme]);
 
+  // Supabase Realtime Subscriptions
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`sync-changes-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'wallets', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newWallet = mapDbToWallet(payload.new);
+            setWallets(prev => {
+              if (prev.some(w => w.id === newWallet.id)) return prev;
+              return [...prev, newWallet];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedWallet = mapDbToWallet(payload.new);
+            setWallets(prev => prev.map(w => w.id === updatedWallet.id ? updatedWallet : w));
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setWallets(prev => prev.filter(w => w.id !== deletedId));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'transactions', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newTx = mapDbToTx(payload.new);
+            setTransactions(prev => {
+              if (prev.some(t => t.id === newTx.id)) return prev;
+              const updated = [newTx, ...prev];
+              return updated.sort((a, b) => {
+                if (a.date !== b.date) return b.date.localeCompare(a.date);
+                return (b.timestamp || 0) - (a.timestamp || 0);
+              });
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedTx = mapDbToTx(payload.new);
+            setTransactions(prev => {
+              const updated = prev.map(t => t.id === updatedTx.id ? updatedTx : t);
+              return updated.sort((a, b) => {
+                if (a.date !== b.date) return b.date.localeCompare(a.date);
+                return (b.timestamp || 0) - (a.timestamp || 0);
+              });
+            });
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setTransactions(prev => prev.filter(t => t.id !== deletedId));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'budgets', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+            const catId = payload.new.category_id;
+            const amount = Number(payload.new.amount);
+            setBudgets(prev => ({ ...prev, [catId]: amount }));
+          } else if (payload.eventType === 'DELETE') {
+            const catId = payload.old.category_id;
+            setBudgets(prev => {
+              const next = { ...prev };
+              delete next[catId];
+              return next;
+            });
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'goals', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newGoal = mapDbToGoal(payload.new);
+            setGoals(prev => {
+              if (prev.some(g => g.id === newGoal.id)) return prev;
+              return [...prev, newGoal];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedGoal = mapDbToGoal(payload.new);
+            setGoals(prev => prev.map(g => g.id === updatedGoal.id ? updatedGoal : g));
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setGoals(prev => prev.filter(g => g.id !== deletedId));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'recurring_txs', filter: `user_id=eq.${user.id}` },
+        (payload) => {
+          if (payload.eventType === 'INSERT') {
+            const newRec = mapDbToRecurring(payload.new);
+            setRecurringTxs(prev => {
+              if (prev.some(r => r.id === newRec.id)) return prev;
+              return [...prev, newRec];
+            });
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedRec = mapDbToRecurring(payload.new);
+            setRecurringTxs(prev => prev.map(r => r.id === updatedRec.id ? updatedRec : r));
+          } else if (payload.eventType === 'DELETE') {
+            const deletedId = payload.old.id;
+            setRecurringTxs(prev => prev.filter(r => r.id !== deletedId));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user]);
+
 
 
   const syncLocalDataToCloud = async () => {
