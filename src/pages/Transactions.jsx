@@ -17,6 +17,9 @@ export const Transactions = () => {
   const [filterWallet, setFilterWallet] = useState('all');
   const [filterMonth, setFilterMonth] = useState(() => getMonthKey());
   const [searchTerm, setSearchTerm] = useState('');
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deletingId, setDeletingId] = useState('');
+  const [deleteError, setDeleteError] = useState('');
 
   const filteredTxs = useMemo(() => {
     let result = [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -55,11 +58,23 @@ export const Transactions = () => {
     }, { income: 0, expense: 0, saving: 0 });
   }, [filteredTxs]);
 
-  const handleDelete = (transaction) => {
-    const label = getCategory(transaction.type, transaction.category).label;
-    if (window.confirm(`ลบรายการ "${label}" จำนวน ${formatMoney(transaction.amount, currency)} ใช่หรือไม่?`)) {
-      deleteTransaction(transaction.id);
+  const requestDelete = (transaction) => {
+    setDeleteError('');
+    setPendingDelete(transaction);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeletingId(pendingDelete.id);
+    const success = await deleteTransaction(pendingDelete.id);
+    setDeletingId('');
+
+    if (success) {
+      setPendingDelete(null);
+      return;
     }
+
+    setDeleteError('ลบรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
   };
 
   return (
@@ -205,7 +220,7 @@ export const Transactions = () => {
                             </button>
                           )}
                           <button 
-                            onClick={() => handleDelete(tx)}
+                            onClick={() => requestDelete(tx)}
                             className="p-2 rounded-xl text-[color:var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
                             title="ลบรายการ"
                           >
@@ -234,6 +249,41 @@ export const Transactions = () => {
           transactionToEdit={editingTransaction}
           onClose={() => setEditingTransaction(null)}
         />
+      )}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[color:var(--bg-secondary)]/80 backdrop-blur-sm">
+          <div className="w-full max-w-sm rounded-2xl border border-[color:var(--border-color)] bg-[color:var(--bg-card)] p-5 shadow-2xl">
+            <h2 className="text-lg font-bold text-[color:var(--text-primary)]">ลบรายการนี้?</h2>
+            <p className="mt-2 text-sm text-[color:var(--text-secondary)]">
+              {getCategory(pendingDelete.type, pendingDelete.category).label} จำนวน {formatMoney(pendingDelete.amount, currency)}
+            </p>
+            {deleteError && (
+              <div className="mt-3 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300">
+                {deleteError}
+              </div>
+            )}
+            <div className="mt-5 flex gap-3">
+              <Button
+                type="button"
+                variant="ghost"
+                className="flex-1"
+                onClick={() => setPendingDelete(null)}
+                disabled={Boolean(deletingId)}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                className="flex-1"
+                onClick={confirmDelete}
+                disabled={Boolean(deletingId)}
+              >
+                {deletingId ? 'กำลังลบ...' : 'ลบ'}
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -6,6 +6,8 @@ import { Button } from './ui/Button';
 
 export const TransactionModal = ({ onClose, transactionToEdit = null }) => {
   const { addTransaction, updateTransaction, wallets } = useFinance();
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     type: 'expense',
     amount: '',
@@ -26,21 +28,28 @@ export const TransactionModal = ({ onClose, transactionToEdit = null }) => {
     }
   }, [transactionToEdit, wallets]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.amount || !formData.walletId) return;
+    setError('');
+    setIsSaving(true);
 
     const txData = {
       ...formData,
       amount: Number(formData.amount)
     };
 
-    if (transactionToEdit) {
-      updateTransaction(transactionToEdit.id, txData);
-    } else {
-      addTransaction(txData);
+    const success = transactionToEdit
+      ? await updateTransaction(transactionToEdit.id, txData)
+      : await addTransaction(txData);
+
+    setIsSaving(false);
+    if (success) {
+      onClose();
+      return;
     }
-    onClose();
+
+    setError('บันทึกไม่สำเร็จ กรุณาเช็คการเชื่อมต่อหรือสถานะ Supabase แล้วลองอีกครั้ง');
   };
 
   return (
@@ -58,6 +67,11 @@ export const TransactionModal = ({ onClose, transactionToEdit = null }) => {
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300">
+              {error}
+            </div>
+          )}
           <div className="flex bg-[color:var(--bg-secondary)] p-1 rounded-xl border border-[color:var(--border-color)]">
             <button
               type="button"
@@ -163,8 +177,8 @@ export const TransactionModal = ({ onClose, transactionToEdit = null }) => {
             <Button type="button" variant="ghost" className="flex-1 text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]" onClick={onClose}>
               ยกเลิก
             </Button>
-            <Button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-500 border-none shadow-lg shadow-blue-500/25">
-              บันทึกรายการ
+            <Button type="submit" disabled={isSaving} className="flex-1 bg-blue-600 hover:bg-blue-500 border-none shadow-lg shadow-blue-500/25 disabled:opacity-60 disabled:cursor-not-allowed">
+              {isSaving ? 'กำลังบันทึก...' : 'บันทึกรายการ'}
             </Button>
           </div>
         </form>

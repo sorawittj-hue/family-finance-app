@@ -5,6 +5,8 @@ import { Button } from './ui/Button';
 
 export const TransferModal = ({ onClose }) => {
   const { transferWallet, wallets } = useFinance();
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     fromWalletId: '',
     toWalletId: '',
@@ -23,7 +25,7 @@ export const TransferModal = ({ onClose }) => {
     }
   }, [wallets]);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.fromWalletId || !formData.toWalletId || !formData.amount) return;
     if (formData.fromWalletId === formData.toWalletId) {
@@ -31,14 +33,23 @@ export const TransferModal = ({ onClose }) => {
       return;
     }
 
-    transferWallet({
+    setError('');
+    setIsSaving(true);
+    const success = await transferWallet({
       fromWalletId: formData.fromWalletId,
       toWalletId: formData.toWalletId,
       amount: Number(formData.amount),
       date: formData.date,
       note: formData.note
     });
-    onClose();
+    setIsSaving(false);
+
+    if (success) {
+      onClose();
+      return;
+    }
+
+    setError('โอนเงินไม่สำเร็จ กรุณาลองใหม่อีกครั้ง');
   };
 
   return (
@@ -67,6 +78,11 @@ export const TransferModal = ({ onClose }) => {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-medium text-rose-300">
+                {error}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-[color:var(--text-secondary)]">จากกระเป๋าเงิน (ต้นทาง)</label>
@@ -139,8 +155,8 @@ export const TransferModal = ({ onClose }) => {
               <Button type="button" variant="ghost" className="flex-1 text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)]" onClick={onClose}>
                 ยกเลิก
               </Button>
-              <Button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-500/25">
-                ยืนยันการโอน
+              <Button type="submit" disabled={isSaving} className="flex-1 bg-indigo-600 hover:bg-indigo-500 border-none shadow-lg shadow-indigo-500/25 disabled:opacity-60 disabled:cursor-not-allowed">
+                {isSaving ? 'กำลังโอน...' : 'ยืนยันการโอน'}
               </Button>
             </div>
           </form>

@@ -209,8 +209,8 @@ export const Settings = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const success = importData(event.target.result);
+    reader.onload = async (event) => {
+      const success = await importData(event.target.result);
       if (success) {
         setImportStatus('success');
         setTimeout(() => setImportStatus(null), 3000);
@@ -223,14 +223,24 @@ export const Settings = () => {
     e.target.value = null;
   };
 
-  const handleLoadDemo = () => {
-    loadDemoData();
+  const handleLoadDemo = async () => {
+    const success = await loadDemoData();
+    if (success === false) {
+      setImportStatus('error');
+      setTimeout(() => setImportStatus(null), 3000);
+      return;
+    }
     setDemoLoaded(true);
     setTimeout(() => setDemoLoaded(false), 3000);
   };
 
-  const handleReset = () => {
-    resetAllData();
+  const handleReset = async () => {
+    const success = await resetAllData();
+    if (success === false) {
+      setImportStatus('error');
+      setTimeout(() => setImportStatus(null), 3000);
+      return;
+    }
     setShowResetModal(false);
   };
 
@@ -253,43 +263,57 @@ export const Settings = () => {
     link.click();
   };
 
-  const handleWalletSubmit = (e) => {
+  const handleWalletSubmit = async (e) => {
     e.preventDefault();
     if (!walletForm.name.trim()) return;
 
+    const success = editingWalletId
+      ? await updateWallet(editingWalletId, walletForm)
+      : await addWallet(walletForm);
+
+    if (!success) {
+      setImportStatus('error');
+      setTimeout(() => setImportStatus(null), 3000);
+      return;
+    }
+
     if (editingWalletId) {
-      updateWallet(editingWalletId, walletForm);
       setEditingWalletId(null);
     } else {
-      addWallet(walletForm);
       setIsAddingWallet(false);
     }
     setWalletForm({ name: '', color: '#3b82f6', type: 'bank' });
   };
 
-  const handleDeleteWalletClick = (wallet) => {
+  const handleDeleteWalletClick = async (wallet) => {
     if (wallets.length <= 1) return;
     const linkedCount = transactions.filter(t => t.walletId === wallet.id).length;
     if (linkedCount > 0) {
       setWalletToDelete({ wallet, count: linkedCount });
     } else {
-      deleteWallet(wallet.id);
+      const success = await deleteWallet(wallet.id);
+      if (!success) {
+        setImportStatus('error');
+        setTimeout(() => setImportStatus(null), 3000);
+      }
     }
   };
 
-  const confirmDeleteWallet = () => {
+  const confirmDeleteWallet = async () => {
     if (walletToDelete) {
-      deleteWallet(walletToDelete.wallet.id);
-      setWalletToDelete(null);
+      const success = await deleteWallet(walletToDelete.wallet.id);
+      if (success) {
+        setWalletToDelete(null);
+      }
     }
   };
 
-  const handleBillSubmit = (e) => {
+  const handleBillSubmit = async (e) => {
     e.preventDefault();
     if (!billForm.name || !billForm.amount) return;
     const amt = Number(billForm.amount);
     
-    addRecurringTx({
+    const success = await addRecurringTx({
       name: billForm.name,
       type: billForm.type,
       category: billForm.category,
@@ -298,6 +322,12 @@ export const Settings = () => {
       interval: billForm.interval,
       dueDay: Number(billForm.dueDay) || 1
     });
+
+    if (!success) {
+      setImportStatus('error');
+      setTimeout(() => setImportStatus(null), 3000);
+      return;
+    }
 
     setBillForm({ name: '', type: 'expense', category: 'food', amount: '', walletId: wallets[0]?.id || '', interval: 'monthly', dueDay: '1' });
     setIsAddingBill(false);

@@ -59,6 +59,10 @@ const isPlainObject = (value) => value !== null && typeof value === 'object' && 
 
 const isPositiveAmount = (amount) => Number.isFinite(Number(amount)) && Number(amount) > 0;
 
+const throwIfSupabaseError = ({ error }) => {
+  if (error) throw error;
+};
+
 // Database snake_case to client camelCase mappers
 const mapTxToDb = (tx, userId) => ({
   id: tx.id,
@@ -172,6 +176,9 @@ export const FinanceProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [syncing, setSyncing] = useState(false);
+  const [syncError, setSyncError] = useState('');
+  const [realtimeStatus, setRealtimeStatus] = useState('DISCONNECTED');
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
 
   // Wallets
   const [wallets, setWallets] = useState(() => loadData(STORAGE_KEYS.WALLETS, DEFAULT_WALLETS, null));
@@ -231,6 +238,14 @@ export const FinanceProvider = ({ children }) => {
   const [goals, setGoals] = useState(() => loadData(STORAGE_KEYS.GOALS, [], null));
 
   // Actions
+  const reportCloudError = useCallback((action, error) => {
+    const message = error?.message || 'ไม่สามารถซิงก์ข้อมูลกับ Supabase ได้';
+    const fullMessage = `${action}: ${message}`;
+    setSyncError(fullMessage);
+    console.error(fullMessage, error);
+    return false;
+  }, []);
+
   const fetchCloudData = useCallback(async (userId) => {
     if (!userId) return;
     try {
@@ -282,11 +297,13 @@ export const FinanceProvider = ({ children }) => {
 
       setRecurringTxs(clientRecurring);
       persistData(STORAGE_KEYS.RECURRING, clientRecurring, userId);
+      setLastSyncedAt(new Date().toISOString());
+      setSyncError('');
     } catch (err) {
-      console.error("fetchCloudData error:", err);
+      reportCloudError('Cloud refresh failed', err);
       throw err;
     }
-  }, []);
+  }, [reportCloudError]);
 
   const loadUserStates = useCallback(async (currentUser) => {
     setSyncing(true);
@@ -438,7 +455,12 @@ export const FinanceProvider = ({ children }) => {
 
   // Realtime Subscriptions
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setRealtimeStatus('DISCONNECTED');
+      return;
+    }
+
+    setRealtimeStatus('CONNECTING');
 
     const channel = supabase
       .channel(`sync-changes-${user.id}`)
@@ -558,11 +580,15 @@ export const FinanceProvider = ({ children }) => {
         }
       )
       .subscribe((status, err) => {
+        setRealtimeStatus(status);
         if (status === 'SUBSCRIBED') {
+          setSyncError('');
           console.log('[Realtime] Connected — listening for cross-device changes');
         } else if (status === 'CHANNEL_ERROR') {
+          reportCloudError('Realtime channel failed', err);
           console.error('[Realtime] Channel error:', err);
         } else if (status === 'TIMED_OUT') {
+          setSyncError('Realtime connection timed out. กำลังใช้ polling สำรองทุก 30 วินาที');
           console.warn('[Realtime] Subscription timed out');
         } else {
           console.log('[Realtime] Status:', status);
@@ -571,8 +597,9 @@ export const FinanceProvider = ({ children }) => {
 
     return () => {
       supabase.removeChannel(channel);
+      setRealtimeStatus('DISCONNECTED');
     };
-  }, [user]);
+  }, [user, reportCloudError]);
 
   // Manual refresh from cloud (pull latest data)
   const refreshFromCloud = useCallback(async () => {
@@ -623,7 +650,6 @@ export const FinanceProvider = ({ children }) => {
 
   const syncLocalDataToCloud = async () => {
     if (!user) return { success: false, error: 'กรุณาเข้าสู่ระบบก่อนซิงก์ข้อมูล' };
-    if (!isOnline) return { success: false, error: 'คุณอยู่ในสถานะออฟไลน์' };
 
     setSyncing(true);
     try {
@@ -676,7 +702,7 @@ export const FinanceProvider = ({ children }) => {
         if (error) throw error;
       }
       if (budgetsToUpsert.length > 0) {
-        const { error } = await supabase.from('budgets').upsert(budgetsToUpsert);
+        const { error } = await supabase.from('budgets').upsert(budgetsToUpsert, { onConflict: 'user_id,category_id' });
         if (error) throw error;
       }
       if (goalsToInsert.length > 0) {
@@ -696,12 +722,12 @@ export const FinanceProvider = ({ children }) => {
       localStorage.removeItem(STORAGE_KEYS.GOALS);
       localStorage.removeItem(STORAGE_KEYS.RECURRING);
 
-      setSyncing(false);
       return { success: true };
     } catch (error) {
-      console.error("syncLocalDataToCloud error:", error);
-      setSyncing(false);
+      reportCloudError('Manual cloud sync failed', error);
       return { success: false, error: error.message || 'เกิดข้อผิดพลาดในการซิงก์ข้อมูล' };
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -758,6 +784,17 @@ export const FinanceProvider = ({ children }) => {
       walletId: tx.walletId || wallets[0]?.id || 'wallet-cash'
     };
 
+    if (user) {
+      try {
+        const { error } = await supabase
+          .from('transactions')
+          .insert(mapTxToDb(newTx, user.id));
+        if (error) throw error;
+      } catch (err) {
+        return reportCloudError('Add transaction failed', err);
+      }
+    }
+
     setTransactions((prev) => {
       const updated = [newTx, ...prev].sort((a, b) => {
         if (a.date !== b.date) return b.date.localeCompare(a.date);
@@ -766,42 +803,34 @@ export const FinanceProvider = ({ children }) => {
       return updated;
     });
 
-    if (user) {
-      try {
-        const { error } = await supabase
-          .from('transactions')
-          .insert(mapTxToDb(newTx, user.id));
-        if (error) console.error("Error adding transaction to Supabase:", error);
-      } catch (err) {
-        console.error("Failed to add transaction to Supabase:", err);
-      }
-    }
-
     return true;
   };
 
   const deleteTransaction = async (id) => {
-    let idsToDelete = [id];
-    setTransactions((prev) => {
-      const txToDelete = prev.find(t => t.id === id);
-      if (txToDelete && txToDelete.linkedTxId) {
-        idsToDelete.push(txToDelete.linkedTxId);
-        return prev.filter(t => t.id !== id && t.id !== txToDelete.linkedTxId);
-      }
-      return prev.filter((t) => t.id !== id);
-    });
+    const txToDelete = transactions.find(t => t.id === id);
+    const idsToDelete = txToDelete?.linkedTxId ? [id, txToDelete.linkedTxId] : [id];
 
     if (user) {
       try {
         const { error } = await supabase
           .from('transactions')
           .delete()
+          .eq('user_id', user.id)
           .in('id', idsToDelete);
-        if (error) console.error("Error deleting transaction from Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to delete transaction from Supabase:", err);
+        return reportCloudError('Delete transaction failed', err);
       }
     }
+
+    setTransactions((prev) => {
+      if (txToDelete && txToDelete.linkedTxId) {
+        return prev.filter(t => t.id !== id && t.id !== txToDelete.linkedTxId);
+      }
+      return prev.filter((t) => t.id !== id);
+    });
+
+    return true;
   };
 
   const updateTransaction = async (id, updatedTx) => {
@@ -810,32 +839,34 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    let mergedTx;
+    const existingTx = transactions.find((t) => t.id === id);
+    if (!existingTx) {
+      console.warn('Rejected transaction update because the row was not found.', { id });
+      return false;
+    }
+
+    const mergedTx = { ...existingTx, ...updatedTx, amount: Number(updatedTx.amount) };
+
+    if (user) {
+      try {
+        const { error } = await supabase
+          .from('transactions')
+          .update(mapTxToDb(mergedTx, user.id))
+          .eq('user_id', user.id)
+          .eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        return reportCloudError('Update transaction failed', err);
+      }
+    }
+
     setTransactions((prev) => {
-      const updated = prev.map((t) => {
-        if (t.id === id) {
-          mergedTx = { ...t, ...updatedTx, amount: Number(updatedTx.amount) };
-          return mergedTx;
-        }
-        return t;
-      });
+      const updated = prev.map((t) => (t.id === id ? mergedTx : t));
       return updated.sort((a, b) => {
         if (a.date !== b.date) return b.date.localeCompare(a.date);
         return (b.timestamp || 0) - (a.timestamp || 0);
       });
     });
-
-    if (user && mergedTx) {
-      try {
-        const { error } = await supabase
-          .from('transactions')
-          .update(mapTxToDb(mergedTx, user.id))
-          .eq('id', id);
-        if (error) console.error("Error updating transaction in Supabase:", error);
-      } catch (err) {
-        console.error("Failed to update transaction in Supabase:", err);
-      }
-    }
 
     return true;
   };
@@ -874,14 +905,6 @@ export const FinanceProvider = ({ children }) => {
       timestamp: timestamp + 1
     };
 
-    setTransactions((prev) => {
-      const updated = [outTx, inTx, ...prev].sort((a, b) => {
-        if (a.date !== b.date) return b.date.localeCompare(a.date);
-        return (b.timestamp || 0) - (a.timestamp || 0);
-      });
-      return updated;
-    });
-
     if (user) {
       try {
         const { error } = await supabase
@@ -890,11 +913,19 @@ export const FinanceProvider = ({ children }) => {
             mapTxToDb(outTx, user.id),
             mapTxToDb(inTx, user.id)
           ]);
-        if (error) console.error("Error inserting transfer transactions to Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to insert transfer transactions to Supabase:", err);
+        return reportCloudError('Transfer failed', err);
       }
     }
+
+    setTransactions((prev) => {
+      const updated = [outTx, inTx, ...prev].sort((a, b) => {
+        if (a.date !== b.date) return b.date.localeCompare(a.date);
+        return (b.timestamp || 0) - (a.timestamp || 0);
+      });
+      return updated;
+    });
 
     return true;
   };
@@ -905,8 +936,6 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    setBudgets((prev) => ({ ...prev, [categoryId]: Number(amount) }));
-
     if (user) {
       try {
         const { error } = await supabase
@@ -915,12 +944,14 @@ export const FinanceProvider = ({ children }) => {
             user_id: user.id,
             category_id: categoryId,
             amount: Number(amount)
-          });
-        if (error) console.error("Error upserting budget in Supabase:", error);
+          }, { onConflict: 'user_id,category_id' });
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to upsert budget in Supabase:", err);
+        return reportCloudError('Update budget failed', err);
       }
     }
+
+    setBudgets((prev) => ({ ...prev, [categoryId]: Number(amount) }));
     return true;
   };
 
@@ -930,12 +961,6 @@ export const FinanceProvider = ({ children }) => {
       return false;
     }
 
-    setBudgets((prev) => {
-      const next = { ...prev };
-      delete next[categoryId];
-      return next;
-    });
-
     if (user) {
       try {
         const { error } = await supabase
@@ -943,41 +968,52 @@ export const FinanceProvider = ({ children }) => {
           .delete()
           .eq('user_id', user.id)
           .eq('category_id', categoryId);
-        if (error) console.error("Error deleting budget from Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to delete budget from Supabase:", err);
+        return reportCloudError('Delete budget failed', err);
       }
     }
+
+    setBudgets((prev) => {
+      const next = { ...prev };
+      delete next[categoryId];
+      return next;
+    });
     return true;
   };
 
   const transferBudget = async (fromCatId, toCatId, amount) => {
-    let fromLimit = 0;
-    let toLimit = 0;
-    setBudgets((prev) => {
-      fromLimit = prev[fromCatId] || 0;
-      toLimit = prev[toCatId] || 0;
-      if (fromLimit < amount) return prev;
-      return {
-        ...prev,
-        [fromCatId]: Math.max(0, fromLimit - amount),
-        [toCatId]: toLimit + amount
-      };
-    });
+    const transferAmount = Number(amount);
+    const fromLimit = budgets[fromCatId] || 0;
+    const toLimit = budgets[toCatId] || 0;
+    if (!fromCatId || !toCatId || fromCatId === toCatId || !isPositiveAmount(transferAmount) || fromLimit < transferAmount) {
+      console.warn('Rejected invalid budget transfer payload.', { fromCatId, toCatId, amount });
+      return false;
+    }
 
-    if (user && fromLimit >= amount) {
+    const nextFromAmount = Math.max(0, fromLimit - transferAmount);
+    const nextToAmount = toLimit + transferAmount;
+
+    if (user) {
       try {
         const { error } = await supabase
           .from('budgets')
           .upsert([
-            { user_id: user.id, category_id: fromCatId, amount: Math.max(0, fromLimit - amount) },
-            { user_id: user.id, category_id: toCatId, amount: toLimit + amount }
-          ]);
-        if (error) console.error("Error transferring budget in Supabase:", error);
+            { user_id: user.id, category_id: fromCatId, amount: nextFromAmount },
+            { user_id: user.id, category_id: toCatId, amount: nextToAmount }
+          ], { onConflict: 'user_id,category_id' });
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to transfer budget in Supabase:", err);
+        return reportCloudError('Transfer budget failed', err);
       }
     }
+
+    setBudgets((prev) => ({
+      ...prev,
+      [fromCatId]: nextFromAmount,
+      [toCatId]: nextToAmount
+    }));
+    return true;
   };
 
   const addGoal = async (goal) => {
@@ -990,160 +1026,173 @@ export const FinanceProvider = ({ children }) => {
       color: goal.color || '#3b82f6'
     };
 
-    setGoals((prev) => [...prev, newGoal]);
-
     if (user) {
       try {
         const { error } = await supabase
           .from('goals')
           .insert(mapGoalToDb(newGoal, user.id));
-        if (error) console.error("Error adding goal to Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to add goal to Supabase:", err);
+        return reportCloudError('Add goal failed', err);
       }
     }
+
+    setGoals((prev) => [...prev, newGoal]);
+    return true;
   };
 
   const updateGoal = async (id, newAmount) => {
-    let updatedGoal;
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === id) {
-          updatedGoal = { ...g, currentAmount: newAmount };
-          return updatedGoal;
-        }
-        return g;
-      })
-    );
-
-    if (user && updatedGoal) {
-      try {
-        const { error } = await supabase
-          .from('goals')
-          .update({ current_amount: Number(newAmount) })
-          .eq('id', id);
-        if (error) console.error("Error updating goal in Supabase:", error);
-      } catch (err) {
-        console.error("Failed to update goal in Supabase:", err);
-      }
+    const existingGoal = goals.find((goal) => goal.id === id);
+    if (!existingGoal || Number(newAmount) < 0 || !Number.isFinite(Number(newAmount))) {
+      console.warn('Rejected invalid goal update payload.', { id, newAmount });
+      return false;
     }
-  };
 
-  const deleteGoal = async (id) => {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
+    const updatedGoal = { ...existingGoal, currentAmount: Number(newAmount) };
 
     if (user) {
       try {
         const { error } = await supabase
           .from('goals')
-          .delete()
+          .update({ current_amount: Number(newAmount) })
+          .eq('user_id', user.id)
           .eq('id', id);
-        if (error) console.error("Error deleting goal from Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to delete goal from Supabase:", err);
+        return reportCloudError('Update goal failed', err);
       }
     }
+
+    setGoals((prev) => prev.map((g) => (g.id === id ? updatedGoal : g)));
+    return true;
+  };
+
+  const deleteGoal = async (id) => {
+    if (user) {
+      try {
+        const { error } = await supabase
+          .from('goals')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('id', id);
+        if (error) throw error;
+      } catch (err) {
+        return reportCloudError('Delete goal failed', err);
+      }
+    }
+
+    setGoals((prev) => prev.filter((g) => g.id !== id));
+    return true;
   };
 
   const addWallet = async (wallet) => {
     const newWallet = { ...wallet, id: `wallet-${generateUUID()}`, type: wallet.type || 'bank' };
-    setWallets(prev => [...prev, newWallet]);
 
     if (user) {
       try {
         const { error } = await supabase
           .from('wallets')
           .insert(mapWalletToDb(newWallet, user.id));
-        if (error) console.error("Error adding wallet to Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to add wallet to Supabase:", err);
+        return reportCloudError('Add wallet failed', err);
       }
     }
+
+    setWallets(prev => [...prev, newWallet]);
+    return true;
   };
 
   const updateWallet = async (id, updatedWallet) => {
-    let mergedWallet;
-    setWallets(prev => prev.map(w => {
-      if (w.id === id) {
-        mergedWallet = { ...w, ...updatedWallet };
-        return mergedWallet;
-      }
-      return w;
-    }));
+    const existingWallet = wallets.find((wallet) => wallet.id === id);
+    if (!existingWallet || !updatedWallet?.name?.trim()) {
+      console.warn('Rejected invalid wallet update payload.', { id, updatedWallet });
+      return false;
+    }
 
-    if (user && mergedWallet) {
+    const mergedWallet = { ...existingWallet, ...updatedWallet };
+
+    if (user) {
       try {
         const { error } = await supabase
           .from('wallets')
           .update(mapWalletToDb(mergedWallet, user.id))
+          .eq('user_id', user.id)
           .eq('id', id);
-        if (error) console.error("Error updating wallet in Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to update wallet in Supabase:", err);
+        return reportCloudError('Update wallet failed', err);
       }
     }
+
+    setWallets(prev => prev.map(w => (w.id === id ? mergedWallet : w)));
+    return true;
   };
 
   const deleteWallet = async (id) => {
-    let fallbackWalletId = 'wallet-cash';
-    setWallets(prev => {
-      const remaining = prev.filter(w => w.id !== id);
-      fallbackWalletId = remaining[0]?.id || 'wallet-cash';
-      return remaining;
-    });
-    
-    setTransactions(prev => prev.map(tx => tx.walletId === id ? { ...tx, walletId: fallbackWalletId } : tx));
+    const remainingWallets = wallets.filter(w => w.id !== id);
+    const fallbackWalletId = remainingWallets[0]?.id || 'wallet-cash';
 
     if (user) {
       try {
-        const { error: delErr } = await supabase
-          .from('wallets')
-          .delete()
-          .eq('id', id);
-        if (delErr) console.error("Error deleting wallet from Supabase:", delErr);
-
         const { error: txErr } = await supabase
           .from('transactions')
           .update({ wallet_id: fallbackWalletId })
+          .eq('user_id', user.id)
           .eq('wallet_id', id);
-        if (txErr) console.error("Error updating transactions wallet_id in Supabase:", txErr);
+        if (txErr) throw txErr;
+
+        const { error: delErr } = await supabase
+          .from('wallets')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('id', id);
+        if (delErr) throw delErr;
       } catch (err) {
-        console.error("Failed to delete wallet/update transactions in Supabase:", err);
+        return reportCloudError('Delete wallet failed', err);
       }
     }
+
+    setWallets(remainingWallets);
+    setTransactions(prev => prev.map(tx => tx.walletId === id ? { ...tx, walletId: fallbackWalletId } : tx));
+    return true;
   };
 
   const addRecurringTx = async (bill) => {
     const dueDay = Math.min(31, Math.max(1, Number(bill.dueDay) || 1));
     const newRec = { ...bill, dueDay, id: `rec-${generateUUID()}`, lastTriggered: '' };
-    setRecurringTxs(prev => [...prev, newRec]);
 
     if (user) {
       try {
         const { error } = await supabase
           .from('recurring_txs')
           .insert(mapRecurringToDb(newRec, user.id));
-        if (error) console.error("Error adding recurring tx to Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to add recurring tx to Supabase:", err);
+        return reportCloudError('Add recurring transaction failed', err);
       }
     }
+
+    setRecurringTxs(prev => [...prev, newRec]);
+    return true;
   };
 
   const deleteRecurringTx = async (id) => {
-    setRecurringTxs(prev => prev.filter(r => r.id !== id));
-
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('recurring_txs')
           .delete()
+          .eq('user_id', user.id)
           .eq('id', id);
-        if (error) console.error("Error deleting recurring tx from Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to delete recurring tx from Supabase:", err);
+        return reportCloudError('Delete recurring transaction failed', err);
       }
     }
+
+    setRecurringTxs(prev => prev.filter(r => r.id !== id));
+    return true;
   };
 
   const triggerRecurringTx = async (id, walletId) => {
@@ -1160,7 +1209,8 @@ export const FinanceProvider = ({ children }) => {
       walletId: walletId || bill.walletId || wallets[0]?.id || 'wallet-cash'
     };
 
-    await addTransaction(newTx);
+    const transactionCreated = await addTransaction(newTx);
+    if (!transactionCreated) return false;
 
     setRecurringTxs(prev => prev.map(r => {
       if (r.id === id) {
@@ -1169,17 +1219,19 @@ export const FinanceProvider = ({ children }) => {
       return r;
     }));
 
-    if (user && isOnline) {
+    if (user) {
       try {
         const { error } = await supabase
           .from('recurring_txs')
           .update({ last_triggered: todayStr })
+          .eq('user_id', user.id)
           .eq('id', id);
-        if (error) console.error("Error updating recurring tx trigger state in Supabase:", error);
+        if (error) throw error;
       } catch (err) {
-        console.error("Failed to update recurring tx trigger state in Supabase:", err);
+        return reportCloudError('Trigger recurring transaction failed', err);
       }
     }
+    return true;
   };
 
   const loadDemoData = async () => {
@@ -1196,15 +1248,16 @@ export const FinanceProvider = ({ children }) => {
     setTransactions(demo.transactions);
     setRecurringTxs(demoRecurring);
 
-    if (user && isOnline) {
+    if (user) {
       try {
-        await Promise.all([
+        const deleteResults = await Promise.all([
           supabase.from('transactions').delete().eq('user_id', user.id),
           supabase.from('budgets').delete().eq('user_id', user.id),
           supabase.from('goals').delete().eq('user_id', user.id),
           supabase.from('recurring_txs').delete().eq('user_id', user.id),
           supabase.from('wallets').delete().eq('user_id', user.id)
         ]);
+        deleteResults.forEach(throwIfSupabaseError);
 
         const walletsToInsert = demo.wallets.map(w => mapWalletToDb(w, user.id));
         const txsToInsert = demo.transactions.map(t => mapTxToDb(t, user.id));
@@ -1216,15 +1269,16 @@ export const FinanceProvider = ({ children }) => {
         const goalsToInsert = demo.goals.map(g => mapGoalToDb(g, user.id));
         const recurringToInsert = demoRecurring.map(r => mapRecurringToDb(r, user.id));
 
-        await supabase.from('wallets').insert(walletsToInsert);
-        if (txsToInsert.length > 0) await supabase.from('transactions').insert(txsToInsert);
-        if (budgetsToInsert.length > 0) await supabase.from('budgets').insert(budgetsToInsert);
-        if (goalsToInsert.length > 0) await supabase.from('goals').insert(goalsToInsert);
-        if (recurringToInsert.length > 0) await supabase.from('recurring_txs').insert(recurringToInsert);
+        throwIfSupabaseError(await supabase.from('wallets').insert(walletsToInsert));
+        if (txsToInsert.length > 0) throwIfSupabaseError(await supabase.from('transactions').insert(txsToInsert));
+        if (budgetsToInsert.length > 0) throwIfSupabaseError(await supabase.from('budgets').insert(budgetsToInsert));
+        if (goalsToInsert.length > 0) throwIfSupabaseError(await supabase.from('goals').insert(goalsToInsert));
+        if (recurringToInsert.length > 0) throwIfSupabaseError(await supabase.from('recurring_txs').insert(recurringToInsert));
       } catch (err) {
-        console.error("Failed to load demo data to Supabase:", err);
+        return reportCloudError('Load demo data failed', err);
       }
     }
+    return true;
   };
 
   const resetAllData = async () => {
@@ -1236,22 +1290,24 @@ export const FinanceProvider = ({ children }) => {
     setCurrency('THB');
     setRecurringTxs([]);
 
-    if (user && isOnline) {
+    if (user) {
       try {
-        await Promise.all([
+        const deleteResults = await Promise.all([
           supabase.from('transactions').delete().eq('user_id', user.id),
           supabase.from('budgets').delete().eq('user_id', user.id),
           supabase.from('goals').delete().eq('user_id', user.id),
           supabase.from('recurring_txs').delete().eq('user_id', user.id),
           supabase.from('wallets').delete().eq('user_id', user.id)
         ]);
+        deleteResults.forEach(throwIfSupabaseError);
         
         const defaultWalletsWithUser = DEFAULT_WALLETS.map(w => mapWalletToDb(w, user.id));
-        await supabase.from('wallets').insert(defaultWalletsWithUser);
+        throwIfSupabaseError(await supabase.from('wallets').insert(defaultWalletsWithUser));
       } catch (err) {
-        console.error("Failed to reset database on Supabase:", err);
+        return reportCloudError('Reset cloud data failed', err);
       }
     }
+    return true;
   };
 
   const exportData = () => {
@@ -1292,21 +1348,22 @@ export const FinanceProvider = ({ children }) => {
       if (parsed.budgets) setBudgets(parsed.budgets);
       if (parsed.goals) setGoals(parsed.goals);
 
-      if (user && isOnline) {
+      if (user) {
         try {
-          await Promise.all([
+          const deleteResults = await Promise.all([
             supabase.from('transactions').delete().eq('user_id', user.id),
             supabase.from('budgets').delete().eq('user_id', user.id),
             supabase.from('goals').delete().eq('user_id', user.id),
             supabase.from('recurring_txs').delete().eq('user_id', user.id),
             supabase.from('wallets').delete().eq('user_id', user.id)
           ]);
+          deleteResults.forEach(throwIfSupabaseError);
 
           if (parsed.wallets) {
-            await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, user.id)));
+            throwIfSupabaseError(await supabase.from('wallets').insert(parsed.wallets.map(w => mapWalletToDb(w, user.id))));
           }
           if (parsed.transactions && parsed.transactions.length > 0) {
-            await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, user.id)));
+            throwIfSupabaseError(await supabase.from('transactions').insert(parsed.transactions.map(t => mapTxToDb(t, user.id))));
           }
           if (parsed.budgets) {
             const budgetsToInsert = Object.entries(parsed.budgets).map(([catId, amount]) => ({
@@ -1315,17 +1372,17 @@ export const FinanceProvider = ({ children }) => {
               amount: Number(amount)
             }));
             if (budgetsToInsert.length > 0) {
-              await supabase.from('budgets').insert(budgetsToInsert);
+              throwIfSupabaseError(await supabase.from('budgets').insert(budgetsToInsert));
             }
           }
           if (parsed.goals && parsed.goals.length > 0) {
-            await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, user.id)));
+            throwIfSupabaseError(await supabase.from('goals').insert(parsed.goals.map(g => mapGoalToDb(g, user.id))));
           }
           if (parsed.recurringTxs && parsed.recurringTxs.length > 0) {
-            await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, user.id)));
+            throwIfSupabaseError(await supabase.from('recurring_txs').insert(parsed.recurringTxs.map(r => mapRecurringToDb(r, user.id))));
           }
         } catch (err) {
-          console.error("Failed to import data to Supabase:", err);
+          return reportCloudError('Import cloud data failed', err);
         }
       }
 
@@ -1373,6 +1430,9 @@ export const FinanceProvider = ({ children }) => {
     user,
     isOnline,
     syncing,
+    syncError,
+    realtimeStatus,
+    lastSyncedAt,
     login,
     signUp,
     logout,
