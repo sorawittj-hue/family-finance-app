@@ -16,15 +16,15 @@ import { useChartSize } from '../hooks/useChartSize';
 import { buildMonthlyFinanceReport, getMonthKey, isTransferTransaction } from '../utils/financeAnalytics';
 
 const insightToneClass = {
-  success: 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300',
-  warning: 'border-amber-500/20 bg-amber-500/10 text-amber-300',
-  danger: 'border-rose-500/20 bg-rose-500/10 text-rose-300',
+  success: 'border-emerald-500/20 bg-emerald-50 text-emerald-800',
+  warning: 'border-amber-500/25 bg-amber-50 text-amber-800',
+  danger: 'border-rose-500/25 bg-rose-50 text-rose-800',
 };
 
 const alertToneClass = {
-  danger: 'border-rose-500/25 bg-rose-500/10 text-rose-200',
-  warning: 'border-amber-500/25 bg-amber-500/10 text-amber-200',
-  info: 'border-blue-500/25 bg-blue-500/10 text-blue-200',
+  danger: 'border-rose-500/25 bg-rose-50 text-rose-800',
+  warning: 'border-amber-500/25 bg-amber-50 text-amber-800',
+  info: 'border-blue-500/25 bg-blue-50 text-blue-800',
 };
 
 export const Dashboard = () => {
@@ -108,10 +108,11 @@ export const Dashboard = () => {
   const priorityAlerts = useMemo(() => activeAlerts.slice(0, 3), [activeAlerts]);
 
   return (
-    <div className="space-y-6">
-      <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+    <div className="dashboard-page space-y-5">
+      <header className="dashboard-header flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-[color:var(--text-primary)]">ภาพรวมสถานะการเงิน</h1>
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-600 mb-2">Money Nitro</p>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-[color:var(--text-primary)]">ภาพรวมสถานะการเงิน</h1>
           <p className="text-[color:var(--text-secondary)] text-sm mt-1">สรุปข้อมูลการเงินของคุณในเดือนนี้</p>
         </div>
         <div className="flex gap-2">
@@ -122,10 +123,10 @@ export const Dashboard = () => {
       </header>
 
       {priorityAlerts.length > 0 && (
-        <Card className="p-5 border-amber-500/20 bg-amber-500/[0.03]">
+        <Card className="p-4 border-amber-500/20 bg-amber-50/80">
           <div className="flex items-start justify-between gap-3 mb-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-500/15 text-amber-300 flex items-center justify-center">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 text-amber-600 flex items-center justify-center">
                 <BellRing size={20} />
               </div>
               <div>
@@ -134,9 +135,9 @@ export const Dashboard = () => {
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             {priorityAlerts.map((alert) => (
-              <div key={alert.id} className={`rounded-xl border p-4 ${alertToneClass[alert.severity] || alertToneClass.info}`}>
+              <div key={alert.id} className={`rounded-lg border p-3 ${alertToneClass[alert.severity] || alertToneClass.info}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <h3 className="text-xs font-black text-[color:var(--text-primary)]">{alert.title}</h3>
@@ -157,8 +158,8 @@ export const Dashboard = () => {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-        <Card className="p-6 relative overflow-hidden group border-blue-500/25 bg-blue-500/[0.02]">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <Card className="metric-card p-5 relative overflow-hidden group border-blue-500/20">
           <div className="relative z-10">
             <h3 className="text-sm font-bold text-[color:var(--text-secondary)] mb-1">สินทรัพย์สุทธิ (Net Worth)</h3>
             <p className="text-3xl font-black text-blue-400 tracking-tight">
@@ -180,7 +181,7 @@ export const Dashboard = () => {
           <div className="absolute -right-4 -bottom-4 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl group-hover:bg-blue-500/20 transition-all duration-500" />
         </Card>
 
-        <Card className="p-6 relative overflow-hidden group border-cyan-500/25 bg-cyan-500/[0.02]">
+        <Card className="metric-card p-5 relative overflow-hidden group border-cyan-500/20">
           <div className="relative z-10 flex justify-between items-start">
             <div>
               <h3 className="text-sm font-semibold text-[color:var(--text-secondary)] mb-1">เงินใช้ได้เดือนนี้</h3>
@@ -197,7 +198,7 @@ export const Dashboard = () => {
           </div>
         </Card>
         
-        <Card className="p-6 relative overflow-hidden group">
+        <Card className="metric-card p-5 relative overflow-hidden group">
           <div className="relative z-10 flex justify-between items-start">
             <div>
               <h3 className="text-sm font-semibold text-[color:var(--text-secondary)] mb-1">รายรับเดือนนี้</h3>
@@ -211,7 +212,7 @@ export const Dashboard = () => {
           </div>
         </Card>
 
-        <Card className="p-6 relative overflow-hidden group">
+        <Card className="metric-card p-5 relative overflow-hidden group">
           <div className="relative z-10 flex justify-between items-start">
             <div>
               <h3 className="text-sm font-semibold text-[color:var(--text-secondary)] mb-1">รายจ่ายเดือนนี้</h3>
@@ -226,22 +227,33 @@ export const Dashboard = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 p-6 border-blue-500/20 bg-blue-500/5 flex flex-col justify-between">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <Card className="lg:col-span-2 p-5 border-blue-500/20 bg-blue-50/70">
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
             <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-blue-500/15 text-blue-300 flex items-center justify-center">
+              <div className="w-12 h-12 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center">
                 <ShieldCheck size={28} />
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wider text-[color:var(--text-muted)] font-bold">คะแนนสุขภาพการเงิน</p>
-                <h2 className="text-3xl font-black text-[color:var(--text-primary)] mt-1">{report.healthScore}/100</h2>
+                <div className="flex items-end gap-3 mt-1">
+                  <h2 className="text-3xl font-black text-[color:var(--text-primary)]">{report.healthScore}/100</h2>
+                  <span className={`text-xs font-black px-2 py-1 rounded-full ${report.healthScore >= 75 ? 'bg-emerald-100 text-emerald-700' : report.healthScore >= 55 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                    {report.healthScore >= 75 ? 'ดี' : report.healthScore >= 55 ? 'ต้องเฝ้าดู' : 'เสี่ยง'}
+                  </span>
+                </div>
+                <div className="mt-3 h-2 rounded-full bg-white border border-blue-100 overflow-hidden max-w-sm">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-blue-600 to-cyan-400"
+                    style={{ width: `${Math.min(Math.max(report.healthScore, 0), 100)}%` }}
+                  />
+                </div>
                 <p className="text-xs text-[color:var(--text-secondary)] mt-1">คำนวณจากกระแสเงินสด เงินออม งบประมาณ เงินสำรอง และภาระหนี้</p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
-              <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 flex-1">
+              <div className="rounded-lg bg-white border border-[color:var(--border-color)] p-3">
                 <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold mb-2">
                   <TrendingUp size={14} /> คงเหลือหลังใช้จ่าย
                 </div>
@@ -252,13 +264,13 @@ export const Dashboard = () => {
                   เดือนนี้สุทธิ {formatMoney(report.netCashflow, currency)}
                 </p>
               </div>
-              <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+              <div className="rounded-lg bg-white border border-[color:var(--border-color)] p-3">
                 <div className="flex items-center gap-2 text-blue-300 text-xs font-bold mb-2">
                   <PiggyBank size={14} /> อัตราออม
                 </div>
                 <p className="text-lg font-black text-[color:var(--text-primary)]">{report.savingRate.toFixed(1)}%</p>
               </div>
-              <div className="rounded-xl bg-[color:var(--bg-secondary)] border border-[color:var(--border-color)] p-4">
+              <div className="rounded-lg bg-white border border-[color:var(--border-color)] p-3">
                 <div className="flex items-center gap-2 text-amber-300 text-xs font-bold mb-2">
                   <AlertTriangle size={14} /> คาดการณ์รายจ่าย
                 </div>
@@ -267,9 +279,9 @@ export const Dashboard = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 mt-4">
             {report.insights.map((insight) => (
-              <div key={insight.title} className={`rounded-xl border p-4 ${insightToneClass[insight.tone] || insightToneClass.warning}`}>
+              <div key={insight.title} className={`rounded-lg border p-3 ${insightToneClass[insight.tone] || insightToneClass.warning}`}>
                 <h3 className="text-sm font-bold">{insight.title}</h3>
                 <p className="text-xs mt-1 opacity-90 leading-relaxed">{insight.detail}</p>
               </div>
@@ -278,7 +290,7 @@ export const Dashboard = () => {
         </Card>
 
         {/* Quick Record Card */}
-        <Card className="p-6 flex flex-col h-full justify-between bg-[color:var(--bg-secondary)] border-[color:var(--border-color)]">
+        <Card className="quick-record-card p-5 flex flex-col justify-between bg-[color:var(--bg-secondary)] border-[color:var(--border-color)]">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shadow-md">
@@ -408,8 +420,8 @@ export const Dashboard = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card className="lg:col-span-2 p-5">
           <h3 className="text-sm font-bold text-[color:var(--text-primary)] mb-6 uppercase tracking-wider">แนวโน้มรายรับ-รายจ่าย (15 วัน)</h3>
           <div ref={trendChart.ref} className="h-64 w-full">
             {trendChart.isReady && (
@@ -424,7 +436,7 @@ export const Dashboard = () => {
                       <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" vertical={false} />
                   <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} />
                   <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(v) => formatMoneyShort(v, currency)} />
                   <Tooltip 
@@ -438,17 +450,17 @@ export const Dashboard = () => {
           </div>
         </Card>
 
-        <Card className="p-6">
+        <Card className="p-5">
           <h3 className="text-sm font-bold text-[color:var(--text-primary)] mb-6 uppercase tracking-wider">รายจ่ายตามหมวดหมู่</h3>
           <div ref={categoryChart.ref} className="h-64 w-full">
             {expenseByCategory.length > 0 ? (
               categoryChart.isReady && (
                   <BarChart width={categoryChart.width} height={categoryChart.height} data={expenseByCategory} layout="vertical" margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={true} vertical={false} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(15,23,42,0.08)" horizontal={true} vertical={false} />
                     <XAxis type="number" hide />
                     <YAxis dataKey="name" type="category" stroke="var(--text-muted)" fontSize={11} tickLine={false} axisLine={false} width={80} />
                     <Tooltip 
-                      cursor={{ fill: 'rgba(255,255,255,0.05)' }}
+                      cursor={{ fill: 'rgba(37,99,235,0.06)' }}
                       contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '12px', color: 'var(--text-primary)' }}
                       formatter={(value) => formatMoney(value, currency)}
                     />

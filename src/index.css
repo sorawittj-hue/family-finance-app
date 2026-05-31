@@ -498,6 +498,64 @@ body::before {
   pointer-events: none;
 }
 
+.dashboard-page {
+  animation: pageEnter 0.28s ease both;
+}
+
+.dashboard-header {
+  padding: 4px 0 8px;
+}
+
+.metric-card {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.92)),
+    var(--bg-card);
+}
+
+.metric-card::after {
+  content: '';
+  position: absolute;
+  inset: auto 16px 0 16px;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.5), rgba(8, 145, 178, 0.2), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.metric-card:hover::after {
+  opacity: 1;
+}
+
+.quick-record-card {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 16px 42px rgba(37, 99, 235, 0.08);
+}
+
+.theme-light .text-blue-300 {
+  color: #2563eb;
+}
+
+.theme-light .text-cyan-300 {
+  color: #0891b2;
+}
+
+.theme-light .text-emerald-300 {
+  color: #059669;
+}
+
+.theme-light .text-amber-300 {
+  color: #d97706;
+}
+
+.theme-light .text-rose-300 {
+  color: #e11d48;
+}
+
+.theme-light .text-violet-300 {
+  color: #7c3aed;
+}
+
 .sidebar-shell,
 .bottom-nav-shell {
   background: rgba(255, 255, 255, 0.94);
