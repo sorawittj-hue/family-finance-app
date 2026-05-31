@@ -11,9 +11,9 @@ export const Button = ({
 }) => {
   const variants = {
     primary: "bg-gradient-to-r from-blue-600 to-blue-500 text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 border border-blue-400/20",
-    secondary: "bg-white/5 text-slate-200 border border-white/10 hover:bg-white/10 hover:text-white",
+    secondary: "bg-[color:var(--bg-card)] text-[color:var(--text-primary)] border border-[color:var(--border-color)] shadow-sm hover:bg-[color:var(--bg-card-hover)] hover:border-[color:var(--border-hover)] hover:-translate-y-0.5",
     danger: "bg-gradient-to-r from-rose-600 to-rose-500 text-white shadow-lg shadow-rose-500/25 hover:shadow-rose-500/40 hover:-translate-y-0.5",
-    ghost: "bg-transparent text-slate-400 hover:text-white hover:bg-white/5",
+    ghost: "bg-transparent text-[color:var(--text-secondary)] hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-card-hover)]",
   };
 
   const sizes = {

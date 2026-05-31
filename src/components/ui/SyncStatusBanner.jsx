@@ -24,15 +24,15 @@ export const SyncStatusBanner = () => {
   // Show local-only mode banner when Supabase key is invalid
   if (!supabaseAvailable) {
     return (
-      <div className="mb-6 rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-100 px-4 py-3 flex items-start gap-3">
-        <HardDrive size={18} className="mt-0.5 shrink-0" />
+      <div className="mb-6 rounded-lg border border-amber-500/25 bg-amber-50/90 text-amber-900 px-4 py-3 flex items-start gap-3 shadow-sm">
+        <HardDrive size={18} className="mt-0.5 shrink-0 text-amber-600" />
         <div>
           <p className="text-sm font-semibold">โหมดออฟไลน์ — ข้อมูลเก็บในเครื่องเท่านั้น</p>
-          <p className="text-xs opacity-80 mt-1">
+          <p className="text-xs text-amber-800 mt-1">
             Supabase API key ไม่ถูกต้อง ข้อมูลจะเก็บใน browser นี้เท่านั้น 
             ไม่ซิงก์ข้ามเครื่อง ถ้าล้าง browser data ข้อมูลจะหาย
           </p>
-          <p className="text-xs opacity-60 mt-1">
+          <p className="text-xs text-amber-700 mt-1">
             แก้ไข: ตั้งค่า VITE_SUPABASE_URL และ VITE_SUPABASE_ANON_KEY ใน Vercel Environment Variables
           </p>
         </div>
@@ -62,10 +62,10 @@ export const SyncStatusBanner = () => {
   return (
     <div className={`mb-6 rounded-xl border px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
       syncError
-        ? 'border-rose-500/25 bg-rose-500/10 text-rose-100'
+        ? 'border-rose-500/25 bg-rose-50/90 text-rose-900'
         : isHealthy
-          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-100'
-          : 'border-blue-500/20 bg-blue-500/10 text-blue-100'
+          ? 'border-emerald-500/20 bg-emerald-50/90 text-emerald-900'
+          : 'border-blue-500/20 bg-blue-50/90 text-blue-900'
     }`}>
       <div className="flex items-start gap-3 min-w-0">
         <div className="mt-0.5 shrink-0">
@@ -81,7 +81,7 @@ export const SyncStatusBanner = () => {
         type="button"
         onClick={handleRefresh}
         disabled={refreshing || syncing}
-        className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold hover:bg-white/15 disabled:opacity-60 disabled:cursor-not-allowed"
+        className="inline-flex items-center justify-center gap-2 rounded-lg border border-current/10 bg-white/70 px-3 py-2 text-xs font-semibold shadow-sm hover:bg-white disabled:opacity-60 disabled:cursor-not-allowed"
       >
         {refreshing || syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         รีเฟรชข้อมูล

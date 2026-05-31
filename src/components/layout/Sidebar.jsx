@@ -19,11 +19,11 @@ export const Sidebar = () => {
   const { user, isOnline } = useFinance();
 
   return (
-    <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-[color:var(--bg-secondary)]/80 border-r border-[color:var(--border-color)] z-50">
+    <aside className="sidebar-shell hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 backdrop-blur-2xl border-r border-[color:var(--border-color)] shadow-[8px_0_36px_rgba(15,23,42,0.06)] z-50">
       <div className="p-6">
         <div className="flex flex-col gap-2">
           <h1 className="text-xl font-extrabold text-[color:var(--text-primary)] tracking-tight flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center shadow-lg shadow-blue-500/30">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 via-cyan-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-blue-500/25 motion-soft">
               <span className="text-[color:var(--text-primary)] text-lg">💸</span>
             </div>
             Money Nitro
@@ -64,15 +64,15 @@ export const Sidebar = () => {
                 cn(
                   "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group relative overflow-hidden",
                   isActive 
-                    ? "text-blue-400 font-bold bg-blue-500/10 shadow-inner" 
-                    : "text-[color:var(--text-secondary)] font-medium hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-card-hover)]"
+                    ? "text-blue-600 font-bold bg-blue-500/10 shadow-sm ring-1 ring-blue-500/10"
+                    : "text-[color:var(--text-secondary)] font-medium hover:text-[color:var(--text-primary)] hover:bg-[color:var(--bg-card-hover)] hover:shadow-sm"
                 )
               }
             >
               {({ isActive }) => (
                 <>
                   <div className={cn(
-                    "absolute left-0 top-0 bottom-0 w-1 bg-blue-500 rounded-r-md transition-transform duration-300",
+                    "absolute left-0 top-2 bottom-2 w-1 bg-gradient-to-b from-blue-600 to-cyan-400 rounded-r-md transition-transform duration-300",
                     isActive ? "scale-y-100" : "scale-y-0"
                   )} />
                   <Icon 
@@ -91,7 +91,7 @@ export const Sidebar = () => {
       </nav>
 
       <div className="p-6">
-        <div className="bg-[color:var(--bg-primary)] rounded-xl p-4 border border-[color:var(--border-color)]">
+        <div className="bg-[color:var(--bg-primary)] rounded-lg p-4 border border-[color:var(--border-color)] shadow-inner">
           <p className="text-xs text-[color:var(--text-secondary)] font-medium">เวอร์ชัน 2.1.0</p>
           <p className="text-[10px] text-[color:var(--text-muted)] mt-1">อัปเดตล่าสุด: วันนี้</p>
         </div>

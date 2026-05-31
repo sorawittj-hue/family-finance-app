@@ -5,7 +5,7 @@ export const Card = ({ className, children, ...props }) => {
   return (
     <div
       className={cn(
-        "glass-card shadow-xl",
+        "glass-card fintech-card shadow-xl",
         className
       )}
       {...props}

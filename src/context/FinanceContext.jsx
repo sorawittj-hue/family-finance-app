@@ -191,9 +191,16 @@ export const FinanceProvider = ({ children }) => {
   // Theme state: dark, oled, light, nordic
   const [theme, setTheme] = useState(() => {
     try {
-      return localStorage.getItem(STORAGE_KEYS.THEME) || 'dark';
+      const storedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
+      const migrationKey = 'family_finance_fintech_white_theme_migrated';
+      const migrated = localStorage.getItem(migrationKey) === 'true';
+      if (!migrated && (!storedTheme || storedTheme === 'dark')) {
+        localStorage.setItem(migrationKey, 'true');
+        return 'light';
+      }
+      return storedTheme || 'light';
     } catch {
-      return 'dark';
+      return 'light';
     }
   });
 
@@ -1361,7 +1368,7 @@ export const FinanceProvider = ({ children }) => {
     setBudgets({});
     setGoals([]);
     setWallets(DEFAULT_WALLETS);
-    setTheme('dark');
+    setTheme('light');
     setCurrency('THB');
     setRecurringTxs([]);
 

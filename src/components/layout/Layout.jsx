@@ -9,7 +9,7 @@ import { ToastContainer } from '../ui/Toast';
 
 export const Layout = () => {
   return (
-    <div className="min-h-screen bg-[color:var(--bg-primary)] text-[color:var(--text-primary)] selection:bg-blue-500/30">
+    <div className="min-h-screen fintech-shell bg-[color:var(--bg-primary)] text-[color:var(--text-primary)] selection:bg-blue-500/20">
       <Sidebar />
       
       {/* Main Content Area */}

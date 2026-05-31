@@ -192,7 +192,7 @@ export const Settings = () => {
 
   const THEMES = [
     { id: 'dark', name: 'มืด (Dark)', icon: Moon, desc: 'สบายตา ถนอมสายตา' },
-    { id: 'light', name: 'สว่าง (Light)', icon: Sun, desc: 'ชัดเจน อ่านง่าย' },
+    { id: 'light', name: 'Fintech White', icon: Sun, desc: 'ขาวสะอาด แบบแอพการเงิน' },
     { id: 'oled', name: 'ดำสนิท (OLED)', icon: Smartphone, desc: 'ประหยัดแบตเตอรี่หน้าจอ OLED' },
     { id: 'nordic', name: 'นอร์ดิก (Nordic)', icon: Sparkles, desc: 'โทนสีพาสเทล ละมุนตา' }
   ];
