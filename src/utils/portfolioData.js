@@ -3,6 +3,9 @@
 import { supabase, supabaseAvailable } from './supabaseClient.js';
 
 const STORAGE_KEY = 'family_finance_portfolio';
+const TARGET_ALLOCATION_KEY = 'family_finance_portfolio_target_allocation';
+const PORTFOLIO_LEDGER_KEY = 'family_finance_portfolio_ledger';
+const PORTFOLIO_WATCHLIST_KEY = 'family_finance_portfolio_watchlist';
 
 // Default holdings
 export const DEFAULT_HOLDINGS = [
@@ -22,6 +25,16 @@ export const CATEGORY_COLORS = {
   'ETF': '#10b981',
   'Bond': '#8b5cf6',
   'Other': '#64748b',
+};
+
+export const PORTFOLIO_CATEGORIES = Object.keys(CATEGORY_COLORS);
+
+export const DEFAULT_TARGET_ALLOCATION = {
+  'US Stock': 45,
+  ETF: 25,
+  Bond: 15,
+  Crypto: 10,
+  Other: 5,
 };
 
 // Format USD (Backward compatibility fallback)
@@ -373,4 +386,274 @@ export const calculateAllocation = (enrichedHoldings) => {
   });
 
   return Object.values(grouped).sort((a, b) => b.value - a.value);
+};
+
+const loadJson = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw);
+    return parsed ?? fallback;
+  } catch (error) {
+    console.warn(`[Portfolio] Failed to load ${key}:`, error);
+    return fallback;
+  }
+};
+
+const saveJson = (key, value) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (error) {
+    console.error(`[Portfolio] Failed to save ${key}:`, error);
+    return false;
+  }
+};
+
+const toFiniteNumber = (value, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const clampPercent = (value) => Math.min(100, Math.max(0, toFiniteNumber(value)));
+
+export const normalizeTargetAllocation = (targetAllocation = DEFAULT_TARGET_ALLOCATION) => {
+  const raw = PORTFOLIO_CATEGORIES.reduce((acc, category) => {
+    acc[category] = clampPercent(targetAllocation[category] ?? DEFAULT_TARGET_ALLOCATION[category] ?? 0);
+    return acc;
+  }, {});
+
+  const total = Object.values(raw).reduce((sum, value) => sum + value, 0);
+  if (total <= 0) return { ...DEFAULT_TARGET_ALLOCATION };
+
+  return PORTFOLIO_CATEGORIES.reduce((acc, category) => {
+    acc[category] = Number(((raw[category] / total) * 100).toFixed(2));
+    return acc;
+  }, {});
+};
+
+export const loadTargetAllocation = () => normalizeTargetAllocation(loadJson(TARGET_ALLOCATION_KEY, DEFAULT_TARGET_ALLOCATION));
+
+export const saveTargetAllocation = (targetAllocation) => {
+  const normalized = normalizeTargetAllocation(targetAllocation);
+  saveJson(TARGET_ALLOCATION_KEY, normalized);
+  return normalized;
+};
+
+export const loadPortfolioLedger = () => {
+  const ledger = loadJson(PORTFOLIO_LEDGER_KEY, []);
+  return Array.isArray(ledger) ? ledger : [];
+};
+
+export const savePortfolioLedger = (ledger) => {
+  if (!Array.isArray(ledger)) return false;
+  return saveJson(PORTFOLIO_LEDGER_KEY, ledger.slice(0, 200));
+};
+
+export const loadPortfolioWatchlist = () => {
+  const watchlist = loadJson(PORTFOLIO_WATCHLIST_KEY, []);
+  return Array.isArray(watchlist) ? watchlist : [];
+};
+
+export const savePortfolioWatchlist = (watchlist) => {
+  if (!Array.isArray(watchlist)) return false;
+  return saveJson(PORTFOLIO_WATCHLIST_KEY, watchlist.slice(0, 100));
+};
+
+export const calculateAllocationDrift = ({ allocation = [], targetAllocation = DEFAULT_TARGET_ALLOCATION, totalValue = 0 }) => {
+  const normalizedTarget = normalizeTargetAllocation(targetAllocation);
+  const actualByCategory = allocation.reduce((acc, item) => {
+    acc[item.name] = toFiniteNumber(item.value);
+    return acc;
+  }, {});
+
+  return PORTFOLIO_CATEGORIES.map((category) => {
+    const value = actualByCategory[category] || 0;
+    const actualPercent = totalValue > 0 ? (value / totalValue) * 100 : 0;
+    const targetPercent = normalizedTarget[category] || 0;
+    const driftPercent = actualPercent - targetPercent;
+    const targetValue = totalValue * (targetPercent / 100);
+    const valueGap = targetValue - value;
+    const absDrift = Math.abs(driftPercent);
+    const status = absDrift >= 8 ? 'danger' : absDrift >= 4 ? 'warning' : 'ok';
+    const action = valueGap > totalValue * 0.025
+      ? 'buy'
+      : valueGap < totalValue * -0.025
+        ? 'trim'
+        : 'hold';
+
+    return {
+      category,
+      value,
+      actualPercent,
+      targetPercent,
+      driftPercent,
+      targetValue,
+      valueGap,
+      status,
+      action,
+      color: CATEGORY_COLORS[category] || CATEGORY_COLORS.Other,
+    };
+  });
+};
+
+export const buildRebalancePlan = ({ drift = [], totalValue = 0 }) => {
+  const actionable = drift
+    .filter((item) => item.action !== 'hold')
+    .sort((a, b) => Math.abs(b.valueGap) - Math.abs(a.valueGap));
+
+  const overWeight = actionable.filter((item) => item.valueGap < 0);
+  const underWeight = actionable.filter((item) => item.valueGap > 0);
+  const largestDrift = actionable[0] || null;
+  const rebalanceNeeded = actionable.some((item) => Math.abs(item.driftPercent) >= 4);
+
+  return {
+    rebalanceNeeded,
+    largestDrift,
+    overWeight,
+    underWeight,
+    totalTradeValue: actionable.reduce((sum, item) => sum + Math.abs(item.valueGap), 0) / 2,
+    guardrailPercent: totalValue > 0 ? 4 : 0,
+  };
+};
+
+export const buildPortfolioRiskProfile = ({ stats, allocation, livePrices = {}, lastUpdated = null }) => {
+  const alerts = [];
+  const totalValue = toFiniteNumber(stats?.totalValue);
+  const holdings = Array.isArray(stats?.holdings) ? stats.holdings : [];
+  const categoryMap = allocation.reduce((acc, item) => {
+    acc[item.name] = toFiniteNumber(item.value);
+    return acc;
+  }, {});
+
+  const largestHolding = holdings
+    .map((holding) => ({
+      ...holding,
+      weight: totalValue > 0 ? ((holding.valueTarget || 0) / totalValue) * 100 : 0,
+    }))
+    .sort((a, b) => b.weight - a.weight)[0] || null;
+
+  if (largestHolding?.weight >= 35) {
+    alerts.push({
+      id: `concentration-${largestHolding.symbol}`,
+      severity: largestHolding.weight >= 50 ? 'danger' : 'warning',
+      title: 'ถือสินทรัพย์ตัวเดียวหนักเกินไป',
+      detail: `${largestHolding.symbol} คิดเป็น ${largestHolding.weight.toFixed(1)}% ของพอร์ต`,
+      route: '/portfolio',
+    });
+  }
+
+  if (holdings.length > 0 && holdings.length < 4) {
+    alerts.push({
+      id: 'low-diversification',
+      severity: 'warning',
+      title: 'การกระจายตัวยังบาง',
+      detail: 'พอร์ตมีสินทรัพย์น้อยกว่า 4 รายการ ความเสี่ยงเฉพาะตัวสูง',
+      route: '/portfolio',
+    });
+  }
+
+  const cryptoWeight = totalValue > 0 ? ((categoryMap.Crypto || 0) / totalValue) * 100 : 0;
+  if (cryptoWeight >= 25) {
+    alerts.push({
+      id: 'crypto-exposure',
+      severity: cryptoWeight >= 40 ? 'danger' : 'warning',
+      title: 'น้ำหนัก Crypto สูง',
+      detail: `Crypto อยู่ที่ ${cryptoWeight.toFixed(1)}% ของพอร์ต ควรกำหนดเพดานความเสี่ยงชัดเจน`,
+      route: '/portfolio',
+    });
+  }
+
+  const pricedSymbols = Object.keys(livePrices || {});
+  const missingPriceCount = holdings.filter((holding) => !pricedSymbols.includes(holding.symbol)).length;
+  if (holdings.length > 0 && missingPriceCount > 0) {
+    alerts.push({
+      id: 'missing-prices',
+      severity: 'info',
+      title: 'ราคาบางรายการยังไม่สด',
+      detail: `${missingPriceCount} รายการใช้ต้นทุนเฉลี่ยเป็น fallback`,
+      route: '/portfolio',
+    });
+  }
+
+  if (lastUpdated) {
+    const ageMinutes = (Date.now() - new Date(lastUpdated).getTime()) / 60000;
+    if (ageMinutes > 60) {
+      alerts.push({
+        id: 'stale-price',
+        severity: 'warning',
+        title: 'ราคาพอร์ตเริ่มเก่า',
+        detail: `อัปเดตล่าสุดประมาณ ${Math.floor(ageMinutes)} นาทีที่แล้ว`,
+        route: '/portfolio',
+      });
+    }
+  }
+
+  let riskScore = 100;
+  alerts.forEach((alert) => {
+    if (alert.severity === 'danger') riskScore -= 22;
+    if (alert.severity === 'warning') riskScore -= 12;
+    if (alert.severity === 'info') riskScore -= 4;
+  });
+  if (stats?.totalPnLPercent < -15) riskScore -= 12;
+  if (stats?.dayChangePercent < -5) riskScore -= 8;
+
+  return {
+    score: Math.max(0, Math.min(100, Math.round(riskScore))),
+    alerts: alerts.slice(0, 6),
+    largestHolding,
+    cryptoWeight,
+    holdingCount: holdings.length,
+  };
+};
+
+export const buildDcaPlan = ({ drift = [], monthlyAmount = 0, financeReport = null }) => {
+  const amount = Math.max(0, toFiniteNumber(monthlyAmount));
+  const canInvest = Boolean(financeReport && financeReport.netCashflow > 0 && financeReport.runwayMonths >= 3);
+  const underWeight = drift
+    .filter((item) => item.valueGap > 0 && item.targetPercent > 0)
+    .sort((a, b) => b.valueGap - a.valueGap);
+
+  if (amount <= 0) {
+    return {
+      status: 'needs-amount',
+      message: 'ตั้งจำนวน DCA รายเดือนก่อน ระบบจะแบ่งตามหมวดที่ต่ำกว่าเป้า',
+      orders: [],
+    };
+  }
+
+  if (!canInvest) {
+    return {
+      status: 'pause',
+      message: 'ควรพัก DCA ก่อน เพราะ cashflow หรือ emergency runway ยังไม่ผ่านเกณฑ์',
+      orders: [],
+    };
+  }
+
+  if (underWeight.length === 0) {
+    return {
+      status: 'balanced',
+      message: 'พอร์ตใกล้ target แล้ว ให้ DCA ตามสัดส่วนเป้าหมายเดิม',
+      orders: drift
+        .filter((item) => item.targetPercent > 0)
+        .map((item) => ({
+          category: item.category,
+          amount: amount * (item.targetPercent / 100),
+          reason: 'รักษาสัดส่วนเป้าหมาย',
+          color: item.color,
+        })),
+    };
+  }
+
+  const totalGap = underWeight.reduce((sum, item) => sum + item.valueGap, 0);
+  return {
+    status: 'active',
+    message: 'แนะนำ DCA เข้าหมวดที่ต่ำกว่าเป้าก่อน เพื่อลด drift โดยไม่ต้องขาย',
+    orders: underWeight.map((item) => ({
+      category: item.category,
+      amount: amount * (item.valueGap / totalGap),
+      reason: `ต่ำกว่าเป้า ${Math.abs(item.driftPercent).toFixed(1)}%`,
+      color: item.color,
+    })),
+  };
 };
